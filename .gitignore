@@ -1,0 +1,10 @@
+# 环境变量与密钥
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.vscode/
