@@ -2,7 +2,7 @@
 from dotenv import load_dotenv
 from hello_agents import HelloAgentsLLM, ToolRegistry
 from hello_agents.tools import CalculatorTool
-from agent.simple_agent import MySimpleAgent
+from learn.agent.simple_agent import MySimpleAgent
 
 # 加载环境变量
 load_dotenv()

@@ -1,6 +1,6 @@
 # test_my_calculator.py
 from dotenv import load_dotenv
-from tools.calculator_tool import create_calculator_registry
+from learn.tools.calculator_tool import create_calculator_registry
 
 # 加载环境变量
 load_dotenv()

@@ -1,0 +1,24 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+
+# LLM（所有候选 provider 都兼容 OpenAI SDK）
+openai
+
+# MCP
+mcp
+
+# 持久化（Day 4）
+sqlalchemy[asyncio]
+asyncpg
+
+# 可观测性（Day 2 就接）
+langfuse
+
+# 开发
+ruff
+pytest
+pytest-asyncio
+httpx
