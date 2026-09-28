@@ -1,9 +1,12 @@
 """圣地巡礼 MCP Server（自建）。
 
-用 MCP SDK 2.x + stdio 传输，由后端作为子进程拉起。
-开发时用 MCP Inspector 单独验证，不要一上来就接进 agent：
+用 MCP SDK 2.x + stdio 传输，由后端作为子进程拉起。讲解见 docs/03-mcp-server.md。
 
-    mcp dev backend/mcp_servers/seichi/server.py
+必须以模块方式启动（本文件用了相对导入，按文件路径启动会报错）：
+
+    python -m backend.mcp_servers.seichi.server
+
+stdio 模式下 stdout 是 JSON-RPC 通道——本文件里任何 print() 都会破坏协议，调试信息请写 stderr。
 
 数据源见 repository.py。当前是 mock —— Anitabi 被 Cloudflare 拦截，
 且其线上 API 已不再返回地标级 geo（实测 0/84），解封后需先解决坐标补全。

@@ -222,7 +222,9 @@ Aoki-Agent/
 │       └── seichi/       圣地巡礼 MCP server
 ├── frontend/             React (Vite + TS)
 ├── evals/                评测（Day 6+）
+├── docs/                 学习手册：计划、架构、逐模块讲解、踩坑日志
 ├── learn/                学习期代码（原 core/ agent/ tools/ tests/）
+├── CLAUDE.md             项目约定（含「代码与文档同步」规则）
 ├── Dockerfile
 ├── docker-compose.yml
 └── .github/workflows/
@@ -230,8 +232,9 @@ Aoki-Agent/
 
 ## 十、参考
 
-- MCP Python SDK（FastMCP）
+- MCP Python SDK 2.x（注意：`FastMCP` 已改名 `MCPServer`）
 - Langfuse Python SDK 文档
 - Open-Meteo API
 - OSRM / Nominatim
-- Anitabi API 文档（待验证）
+- Anitabi 开放 API（实测结论见 4.1）
+- Bangumi API `api.bgm.tv/v0/search/subjects`

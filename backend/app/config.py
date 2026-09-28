@@ -1,4 +1,7 @@
-"""配置。全部从环境变量读取，本地用 .env，生产走 App Runner 环境变量。"""
+"""配置。全部从环境变量读取，本地用 .env，生产走 App Runner 环境变量。
+
+讲解见 docs/02-project-setup.md。
+"""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

@@ -25,4 +25,4 @@ description: 一句话说明这个 skill 做什么、什么时候该用它。Cla
 - **正文是延迟加载的**。只有 skill 被调用时正文才进入上下文，因此可以写得详细，不用担心占用 token。
 - 用 `/<skill-name>` 可以手动触发。
 
-参考：[项目计划](../docs/project-vision.md)。
+参考：[项目计划](../../docs/00-project-plan.md)。

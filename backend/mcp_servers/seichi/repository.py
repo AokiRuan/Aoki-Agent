@@ -1,4 +1,4 @@
-"""圣地数据访问层。
+"""圣地数据访问层。讲解见 docs/03-mcp-server.md。
 
 把「数据从哪来」和「MCP 工具怎么用」隔开：server.py 只依赖 SeichiRepository 接口，
 将来 Anitabi 解封换成 AnitabiRepository 时，server.py 一行不用改。

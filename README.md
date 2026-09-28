@@ -2,7 +2,7 @@
 
 日本动画圣地巡礼 agent。自建 agent loop 与 harness，能力通过 MCP 工具接入。
 
-> 计划与设计详见 [.claude/docs/project-vision.md](.claude/docs/project-vision.md)
+> 这是一个学习项目。[docs/](docs/README.md) 是配套的学习手册，跟代码同步维护——从架构思想到每个模块的逐行讲解、设计取舍和踩坑记录。
 
 ## 核心场景
 
@@ -24,17 +24,19 @@ backend/
   mcp_servers/  自建圣地巡礼 MCP server
 frontend/       React（待初始化，需先装 Node）
 evals/          评测（Day 6+）
+docs/           学习手册
 learn/          学习期代码，仅作参考
 ```
 
 ## 本地开发
 
 ```bash
-python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env    # 填入 LLM_API_KEY
+uv venv && .venv\Scripts\activate
+uv pip install -r requirements.txt     # 国内加 --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+cp .env.example .env                    # 填入 LLM_API_KEY
 
+python -m pytest
 uvicorn backend.app.main:app --reload
 ```
 
-`DATABASE_URL` 留空时自动回退到内存 store，本地不起 Postgres 也能开发。
+`DATABASE_URL` 留空时自动回退到内存 store，本地不起 Postgres 也能开发。环境细节与常见问题见 [docs/02-project-setup.md](docs/02-project-setup.md)。

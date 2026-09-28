@@ -1,4 +1,4 @@
-"""Agent loop 对外产出的结构化事件。
+"""Agent loop 对外产出的结构化事件。讲解见 docs/01-architecture.md 原则二。
 
 loop 内部不直接写 SSE，而是 yield 这些事件，由 app/routes/chat.py 转成 SSE 帧。
 这样 loop 既能被 HTTP 层消费，也能被评测脚本直接消费。
