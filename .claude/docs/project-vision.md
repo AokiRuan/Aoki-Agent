@@ -57,11 +57,35 @@
   - `search_anime(title)` — 按作品名模糊搜索，返回作品 id 与基本信息
   - `list_spots(anime_id)` — 返回该作品的所有圣地（名称、坐标、对应剧集/场景、地址）
   - `get_spot(spot_id)` — 单个圣地详情
-- **数据源**（Day 1 上午必须定下来）：
-  - 首选：Anitabi 开放 API（需验证可用性与调用限制）
-  - 兜底：手工整理 5～10 部作品的 JSON 数据集，demo 够用且完全可控
-- **实现**：Python MCP SDK（FastMCP），stdio 传输，用 MCP Inspector 单独验证
-- **这是风险最高的模块**——数据源不确定。兜底方案要在 Day 1 就准备好，不能拖到后面
+- **实现**：MCP SDK 2.x + stdio 传输，用 MCP Inspector 单独验证
+- **数据源：已验证，当前用 mock**。`repository.py` 把数据源抽象成 `SeichiRepository` 接口，
+  server.py 只依赖接口，将来切回真实 API 只改 `get_repository()` 一处
+
+#### Anitabi API 实测结论（2026-09-28）
+
+能用的：
+
+| 端点 | 结果 |
+|---|---|
+| `GET api.anitabi.cn/bangumi/{id}/lite` | 200，97ms。作品元信息 + 前 10 地标 + **作品级**地图中心坐标 |
+| `GET api.anitabi.cn/bangumi/{id}/points/detail` | 200。全部地标（115908 返回 84 条） |
+| `POST api.bgm.tv/v0/search/subjects` | 200。**补上了文档缺口**——Anitabi 没有按标题搜索的端点，用 Bangumi 官方搜索拿 subjectID |
+
+三个坑：
+
+1. **地标级 `geo` 线上已不再返回**。文档示例里有，实测两部作品 **0/84、0/63**，字段全集里没有 `geo`。只剩作品级中心点
+2. **坐标只能部分救回**。`originURL` 里 Google Maps 的 `ll=` 参数可提取坐标，但仅覆盖 **35/84 = 42%**；Anitabi 自有来源的 49 个地标 URL 里只有 id 没有坐标
+3. **Cloudflare 限流严格**。约 25 个请求后被 403，45 秒后仍未恢复。**演示当天实时调用有翻车风险**
+
+另：`pointsLength` 声称 582 个地标，`points/detail` 实际只返回 84 个。
+
+#### 当前方案：mock 数据
+
+`data/mock_spots.json` 按 Anitabi 格式伪造，5 部作品 22 个地标，坐标零缺失。
+与 Anitabi 的唯一结构差异是 `points[].geo` —— 那正是接真实 API 时要额外解决的部分。
+
+接回真实 API 前必须先解决：坐标补全（Nominatim 地理编码或其他途径）、
+本地缓存以规避限流、Anitabi 数据遵循 CC BY-NC-SA 4.0 需标注来源并支持跳转（`origin` / `origin_url` 字段已预留）。
 
 ### 4.2 外部 MCP 服务
 
@@ -150,7 +174,7 @@ Harness 需要覆盖的点：
 
 | Day | 主线 | 产出 | 验收 |
 |---|---|---|---|
-| **1** | 数据 + 圣地 MCP | 上午验证数据源并定方案；下午 MCP server 三个工具跑通 | MCP Inspector 能查到《リコリス・リコイル》的圣地列表 |
+| **1** ✅ | 数据 + 圣地 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；MCP server 三个工具跑通 | ✅ 三个工具可查到《リコリス・リコイル》等 5 部作品共 22 个地标，坐标零缺失 |
 | **2** | Agent loop + 后端 | 自建 loop 接三个 MCP；FastAPI SSE 端点；`SessionStore` 接口 + 内存实现；Langfuse 打点 | curl 能流式拿到带工具调用的回答，Langfuse 看到完整 trace |
 | **3** | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | 三个核心场景在浏览器里全部跑通，能切换会话 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
@@ -172,7 +196,7 @@ Harness 需要覆盖的点：
 
 | 风险 | 影响 | 预案 |
 |---|---|---|
-| 圣地数据源不可用 / 有限制 | Day 1 卡住，后面全堵 | Day 1 上午限时 2 小时验证，超时直接切手工 JSON |
+| ~~圣地数据源不可用~~ **已发生** | Anitabi 被 Cloudflare 拦截 + 地标坐标已不返回 | ✅ 已切 mock 数据，`SeichiRepository` 接口隔离，解封后只改一处 |
 | AWS 部署踩坑 | Day 5 交不出公网 URL | 本地 compose + 录屏演示兜底；App Runner 不行切 EC2 |
 | 社区 MCP server 质量参差 | 天气/路线接不上 | 自己包，Open-Meteo 和 OSRM 都是简单 REST，各一小时 |
 | LLM tool calling 不稳定 | agent 乱调工具或不调 | 现用 DeepSeek 支持 function calling；LLM 层保留 provider 抽象，随时可换 |
@@ -183,8 +207,8 @@ Harness 需要覆盖的点：
 - **LLM**：继续 DeepSeek 还是换 tool calling 更强的模型——Day 2 跑起来后凭实际表现定
 - **路线 API**：Google Maps（质量好、要绑卡）vs OSRM（免费、够用）——倾向 OSRM，demo 不值得绑卡
 - **生产 Postgres 托管**：RDS（AWS 原生，但要配 VPC / 安全组，吃掉 Day 5 半天）vs Neon / Supabase 这类托管免费层（拿到连接串就能用）——倾向后者，Day 5 的时间留给部署本身
-- **数据源许可**：若用 Anitabi，确认其 API 使用条款
-- **现有代码处置**：`core/` `agent/` `tools/` `tests/` 是学习期产物，建议移到 `learn/` 保留参考，新代码放 `backend/` `frontend/`
+- **何时切回真实 Anitabi 数据**：需先解决坐标补全（42% 可从 originURL 提取，其余靠地理编码）与限流缓存。
+  也可能维持 mock——demo 的技术展示点在 agent loop 与 MCP，不在数据完整性
 
 ## 九、目标目录结构
 

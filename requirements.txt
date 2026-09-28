@@ -7,8 +7,8 @@ python-dotenv
 # LLM（所有候选 provider 都兼容 OpenAI SDK）
 openai
 
-# MCP
-mcp
+# MCP —— 必须 2.x：FastMCP 已改名为 MCPServer，网上多数教程是 1.x 写法
+mcp>=2.2
 
 # 持久化（Day 4）
 sqlalchemy[asyncio]
