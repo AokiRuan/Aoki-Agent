@@ -1,4 +1,4 @@
-# Aoki-Agent
+# Seichi-junrei demo
 
 日本动画圣地巡礼 agent。自建 agent loop 与 harness，能力通过 MCP 工具接入。
 
