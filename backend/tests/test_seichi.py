@@ -1,29 +1,14 @@
 """圣地巡礼 MCP server 测试。讲解见 docs/03-mcp-server.md。"""
-import sys
-from pathlib import Path
-
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
 from backend.mcp_servers.seichi import server
 from backend.mcp_servers.seichi.repository import MockRepository
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from backend.tests.stdio_helper import stdio_session
 
 
 async def test_stdio_roundtrip_as_subprocess():
     """走真实协议：把 server 拉成子进程，经 stdin/stdout 的 JSON-RPC 调用工具。
     这正是 Day 2 的 mcp_client.py 要做的事。"""
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "backend.mcp_servers.seichi.server"],
-        cwd=str(PROJECT_ROOT),
-        env={"PYTHONIOENCODING": "utf-8"},
-    )
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool("search_anime", {"title": "莉可丽丝"})
+    async with stdio_session("backend.mcp_servers.seichi.server") as session:
+        result = await session.call_tool("search_anime", {"title": "莉可丽丝"})
 
     assert result.is_error is False
     # 返回 list 的工具，结构化结果会被包成 {"result": [...]}

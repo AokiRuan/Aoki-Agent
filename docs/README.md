@@ -10,17 +10,18 @@
 | 01 | [架构与设计思想](01-architecture.md) | 一次请求如何流经整个系统；贯穿全项目的五条设计原则 | ✅ |
 | 02 | [工程搭建](02-project-setup.md) | 目录结构、uv 虚拟环境、依赖、配置、测试、怎么运行 | ✅ |
 | 03 | [MCP Server：圣地巡礼](03-mcp-server.md) | MCP 协议、stdio 传输、给 LLM 设计工具、Repository 模式、先探测再写代码 | ✅ |
-| 04 | Agent Loop | LLM tool calling、自建循环、流式下 tool_calls 的拼接 | ⏳ Day 2 |
-| 05 | Harness | 迭代上限、错误恢复、上下文裁剪、重复调用检测 | ⏳ Day 2 |
-| 06 | MCP Client | 多 server 聚合、工具发现、调用分发 | ⏳ Day 2 |
-| 07 | FastAPI 与 SSE | lifespan、流式响应、事件协议 | ⏳ Day 2 |
-| 08 | 可观测性：Langfuse | trace 的结构、怎么用 trace 调试 agent | ⏳ Day 2 |
-| 09 | React 前端 | SSE 消费、工具过程可视化、地图联动 | ⏳ Day 3 |
-| 10 | 会话持久化 | SessionStore 接口、SQLAlchemy async、从内存切到 Postgres | ⏳ Day 4 |
-| 11 | Docker | 多阶段构建、compose | ⏳ Day 4 |
-| 12 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
-| 13 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
-| 14 | Agent 评测 | 评测集、指标、Langfuse Experiments | ⏳ Day 6+ |
+| 04 | [外部 API 型 MCP：天气与路线](04-external-mcp-servers.md) | 网络失败与降级、依赖注入测试、参数约束、路线排序算法、公共服务使用政策 | ✅ |
+| 05 | Agent Loop | LLM tool calling、自建循环、流式下 tool_calls 的拼接 | ⏳ Day 2 |
+| 06 | Harness | 迭代上限、错误恢复、上下文裁剪、重复调用检测 | ⏳ Day 2 |
+| 07 | MCP Client | 多 server 聚合、工具发现、调用分发 | ⏳ Day 2 |
+| 08 | FastAPI 与 SSE | lifespan、流式响应、事件协议 | ⏳ Day 2 |
+| 09 | 可观测性：Langfuse | trace 的结构、怎么用 trace 调试 agent | ⏳ Day 2 |
+| 10 | React 前端 | SSE 消费、工具过程可视化、地图联动 | ⏳ Day 3 |
+| 11 | 会话持久化 | SessionStore 接口、SQLAlchemy async、从内存切到 Postgres | ⏳ Day 4 |
+| 12 | Docker | 多阶段构建、compose | ⏳ Day 4 |
+| 13 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
+| 14 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
+| 15 | Agent 评测 | 评测集、指标、Langfuse Experiments | ⏳ Day 6+ |
 | — | [踩坑日志](pitfalls.md) | 开发中遇到的真实问题、根因与解法 | 持续更新 |
 
 建议先读 01 建立全局图，再按编号顺序读。每章都可以对照代码看——文中的文件链接可以直接点开。

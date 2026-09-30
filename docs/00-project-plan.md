@@ -87,12 +87,21 @@
 接回真实 API 前必须先解决：坐标补全（Nominatim 地理编码或其他途径）、
 本地缓存以规避限流、Anitabi 数据遵循 CC BY-NC-SA 4.0 需标注来源并支持跳转（`origin` / `origin_url` 字段已预留）。
 
-### 4.2 外部 MCP 服务
+### 4.2 天气与路线 MCP Server（自建） ✅
 
-只接两个，不贪多：
+**决定：两个都自建**，不用社区现成的——社区实现多为 Node（本机未装）或基于 MCP SDK 1.x；两者都是薄包装，自建成本低且有学习价值。详见 [docs/04](04-external-mcp-servers.md)。
 
-- **天气**：Open-Meteo（免费、无需 key、有日本覆盖）。优先找社区现成 MCP server，没有合适的就自己包——包一个 `get_forecast(lat, lng, days)` 一小时的事
-- **路线/地图**：Google Maps（需 key + 绑卡）或 OSRM + Nominatim（免费）。Demo 需要的只是「两点间移动时间」和「地址→坐标」，OSRM 就够
+| Server | 工具 | 外部服务（实测 2026-09-29） |
+|---|---|---|
+| `weather` | `get_weather_forecast(lat, lng, days≤16)` | Open-Meteo，~1.1s，免 key |
+| `route` | `geocode(query)` · `plan_route(stops, mode, optimize)` | OSRM FOSSGIS 实例（步行/驾车），Nominatim |
+
+要点：
+
+- **OSRM 用 FOSSGIS 实例而不是官方 demo**：官方 demo 请求步行会静默返回驾车结果
+- **路线服务不可用时降级**为直线距离估算，结果标记 `estimated`；天气不降级（没有诚实的近似值）
+- **不含公共交通**：步行超 45 分钟的路段标记 `suggest_transit`，由 LLM 建议改乘电车
+- 排序：≤8 个点穷举求最优，更多用最近邻启发式
 
 ### 4.3 Agent Loop + Harness（自建）
 
@@ -174,7 +183,7 @@ Harness 需要覆盖的点：
 
 | Day | 主线 | 产出 | 验收 |
 |---|---|---|---|
-| **1** ✅ | 数据 + 圣地 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；MCP server 三个工具跑通 | ✅ 三个工具可查到《リコリス・リコイル》等 5 部作品共 22 个地标，坐标零缺失 |
+| **1** ✅ | 数据 + 三个 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；圣地/天气/路线三个 MCP server 全部跑通 | ✅ 5 部作品 22 个地标（坐标已用 Nominatim 校正）；天气、路线实测调通真实 API |
 | **2** | Agent loop + 后端 | 自建 loop 接三个 MCP；FastAPI SSE 端点；`SessionStore` 接口 + 内存实现；Langfuse 打点 | curl 能流式拿到带工具调用的回答，Langfuse 看到完整 trace |
 | **3** | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | 三个核心场景在浏览器里全部跑通，能切换会话 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
@@ -198,14 +207,14 @@ Harness 需要覆盖的点：
 |---|---|---|
 | ~~圣地数据源不可用~~ **已发生** | Anitabi 被 Cloudflare 拦截 + 地标坐标已不返回 | ✅ 已切 mock 数据，`SeichiRepository` 接口隔离，解封后只改一处 |
 | AWS 部署踩坑 | Day 5 交不出公网 URL | 本地 compose + 录屏演示兜底；App Runner 不行切 EC2 |
-| 社区 MCP server 质量参差 | 天气/路线接不上 | 自己包，Open-Meteo 和 OSRM 都是简单 REST，各一小时 |
+| ~~社区 MCP server 质量参差~~ | — | ✅ 已自建，天气/路线实测可用 |
+| 公共路线/地理编码服务不稳定 | 规划路线失败 | ✅ OSRM 不可用时降级为估算；Nominatim 限速 + 缓存 |
 | LLM tool calling 不稳定 | agent 乱调工具或不调 | 现用 DeepSeek 支持 function calling；LLM 层保留 provider 抽象，随时可换 |
 | 流式 + tool calls 的解析 | loop 实现复杂度被低估 | Day 2 先做非流式版本跑通逻辑，再加流式 |
 
 ## 八、待定决策
 
 - **LLM**：继续 DeepSeek 还是换 tool calling 更强的模型——Day 2 跑起来后凭实际表现定
-- **路线 API**：Google Maps（质量好、要绑卡）vs OSRM（免费、够用）——倾向 OSRM，demo 不值得绑卡
 - **生产 Postgres 托管**：RDS（AWS 原生，但要配 VPC / 安全组，吃掉 Day 5 半天）vs Neon / Supabase 这类托管免费层（拿到连接串就能用）——倾向后者，Day 5 的时间留给部署本身
 - **何时切回真实 Anitabi 数据**：需先解决坐标补全（42% 可从 originURL 提取，其余靠地理编码）与限流缓存。
   也可能维持 mock——demo 的技术展示点在 agent loop 与 MCP，不在数据完整性
@@ -219,7 +228,9 @@ Aoki-Agent/
 │   ├── agent/            自建 loop、harness、MCP client
 │   ├── store/            SessionStore 接口 + 内存 / Postgres 实现
 │   └── mcp_servers/
-│       └── seichi/       圣地巡礼 MCP server
+│       ├── seichi/       圣地巡礼 MCP server（本地数据）
+│       ├── weather/      天气 MCP server（Open-Meteo）
+│       └── route/        路线 MCP server（OSRM + Nominatim）
 ├── frontend/             React (Vite + TS)
 ├── evals/                评测（Day 6+）
 ├── docs/                 学习手册：计划、架构、逐模块讲解、踩坑日志

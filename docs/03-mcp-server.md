@@ -54,6 +54,45 @@ MCP 支持三种传输方式：`stdio`、`sse`、`streamable-http`。我们用 s
 
 **由此得出一条硬规则：stdio server 里绝对不能 `print()`。** stdout 是协议通道，你 print 的任何东西都会被 client 当成 JSON-RPC 消息解析，直接破坏通信。调试信息写 stderr（`print(..., file=sys.stderr)` 或用 `logging`，它默认就写 stderr）。
 
+### LLM 怎么知道有哪些工具：JSON Schema
+
+LLM 最终读到的是文字，但不是随手写的说明，而是一份**结构化的工具定义**。以天气工具为例，Day 2 调 LLM 时放进请求 `tools` 参数的内容是（实测输出，有精简）：
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather_forecast",
+    "description": "查询某地未来几天的逐日天气预报（最多 16 天）。……",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "lat":  {"type": "number",  "minimum": -90, "maximum": 90, "description": "纬度"},
+        "lng":  {"type": "number",  "minimum": -180, "maximum": 180, "description": "经度"},
+        "days": {"type": "integer", "minimum": 1, "maximum": 16, "default": 7, "description": "预报天数，从今天算起"}
+      },
+      "required": ["lat", "lng"]
+    }
+  }
+}
+```
+
+`parameters` 里的内容就是 **JSON Schema**：一种描述"一段 JSON 数据应该长什么样"的标准格式。`type` 是类型，`properties` 是有哪些字段，`required` 是哪些必填，`minimum` / `maximum` 是取值范围。
+
+**文字描述就在 schema 里面**：docstring 成为工具级的 `description`，`Field(description=…)` 成为参数级的 `description`。所以不是"用文字描述"和"用 schema"二选一，schema = 文字描述 + 机器可读的精确约束。
+
+LLM 服务商收到这份定义后，会把它转换并放进模型实际读取的提示词里（格式由服务商决定，我们看不到）。模型训练时见过大量 JSON Schema，读到 `"maximum": 16` 就像读到"最多 16 天"一样能理解。
+
+对比学习期的 [learn/agent/simple_agent.py](../learn/agent/simple_agent.py)：它把工具说明拼成纯文字放进 system prompt，让 LLM 输出 `[TOOL_CALL:名字:参数]` 这样的文本，再用正则解析。换成 schema 后，同一份定义同时起三个作用：
+
+1. **提示 LLM**：和文字一样，但更精确。"最多十几天"是模糊的，`"maximum": 16` 不是
+2. **服务端校验**：MCP SDK 用同一份 schema 检查 LLM 传来的参数，越界的在执行前就会被拒绝（04 章实测 `days=30` 被拦下）
+3. **LLM 的输出也是结构化的**：LLM 在 `tool_calls` 字段里返回严格的 JSON 参数，不再需要用正则解析文本
+
+还有一个好处：schema 从函数签名**自动生成**，改了代码 schema 跟着变，不会和代码不一致。
+
+**注意：LLM 看到约束不等于一定遵守**，它仍可能传越界的值。提示只是让出错变少，服务端校验才能保证出错无害，两者缺一不可。
+
 为什么选 stdio 而不是 HTTP：seichi server 和后端跑在同一个容器里，子进程不需要端口、不需要网络配置、父进程退出子进程自动跟着退。外部的天气/路线服务如果是远程的，才需要 HTTP 传输。
 
 ## 代码走读
@@ -129,11 +168,25 @@ def get_repository() -> SeichiRepository:
     return MockRepository()      # ← 将来切 Anitabi 只改这一行
 ```
 
+> **Python 知识点：`ABC` 与 `@abstractmethod`**
+>
+> `ABC`（Abstract Base Class，抽象基类）配合 `@abstractmethod`，定义"子类必须实现哪些方法"的合同，并由 Python 在运行时强制检查。实测：
+>
+> - `SeichiRepository()` 直接实例化 → `TypeError: Can't instantiate abstract class ... without an implementation for abstract methods 'get_spot', 'list_spots', 'search_anime'`
+> - 子类漏实现 `get_spot` → **类定义不报错，实例化时报错**，并指明漏了哪个
+>
+> 价值在于把错误提前：不用 ABC 的话，漏写的方法要等 LLM 第一次调它时才抛 `AttributeError`（可能在演示现场）；用了 ABC，服务启动、`get_repository()` 创建实例的那一刻就会失败。
+>
+> 为什么不用另外两种写法：普通类 + `raise NotImplementedError` 要到调用时才报错，适合只有一个实现的占位（如 `agent/llm.py` 里的骨架）；`typing.Protocol` 只在 mypy/pyright 静态检查时生效，运行时不阻止实例化不完整的类，适合约束不能修改的第三方类。我们的实现类都是自己写的、注定有多个，所以用 ABC。`store/base.py` 的 `SessionStore` 同理。
+
 server.py 只认识 `SeichiRepository` 这个接口，不知道数据来自 JSON 还是 HTTP API。这是 [01 章原则四](01-architecture.md#原则四会变的东西先立接口)的直接应用——而且这次是**真用上了**：数据源原计划用 Anitabi，实测发现不可用后，切 mock 只改了 `get_repository()` 一处。
 
 几个实现细节：
 
-- **`@lru_cache` 加载 JSON**：数据文件只在第一次访问时读一次，之后都从内存拿。代价是改了 JSON 要重启进程才生效
+- **`@lru_cache` 加载 JSON**：数据文件只在第一次访问时读一次，之后都从内存拿（`_load.cache_info()` 可以看命中情况）。需要注意三点：
+  - **返回的是同一个对象**。实测改了 `_load()` 返回的 dict，其他调用方拿到的也是改过的数据。所以 `_anime_brief()` / `_spot_out()` 都新建 dict 返回，从不修改原始数据——这是这个文件必须保持的隐性约定
+  - 改了 JSON 要重启进程才生效，测试里可用 `_load.cache_clear()`
+  - `_load` 故意写成模块级函数而不是方法：`lru_cache` 加在方法上时 `self` 会成为缓存 key 的一部分，每个实例各缓存一份，而且缓存会一直持有实例引用、导致无法回收
 - **`_anime_brief()` 故意不带地标列表**：见下文「给 LLM 设计工具」第 3 条
 - **`_spot_out()` 做字段转换**：把 Anitabi 的 `geo: [lat, lng]` 拆成 `lat` / `lng`，`ep` / `s` 改名成 `episode` / `timestamp_sec`。原因见下文第 4 条
 

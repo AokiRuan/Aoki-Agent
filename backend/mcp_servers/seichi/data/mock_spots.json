@@ -5,7 +5,7 @@
     "note": "按 Anitabi API 格式伪造的开发用数据。Anitabi 被 Cloudflare 拦截期间用它跑通链路。",
     "format_note": "与 Anitabi 的差异：points[].geo 是线上 API 已不再返回的字段，这里补上——它正是接入真实 API 时需要额外解决的部分。",
     "id_note": "115908 与 364450 是实际验证过的 Bangumi subjectID；其余为占位，接真实 API 前需核对。",
-    "coords_note": "坐标为人工填写的近似值，够 demo 用，不可作为实际导航依据。"
+    "coords_note": "坐标为近似值，够 demo 用，不可作为实际导航依据。2026-09-29 用 Nominatim 校正过偏差超过 300m 且名称精确匹配的地标；同名异地（如须贺神社匹配到仙台）的未采纳。"
   },
   "anime": [
     {
@@ -36,7 +36,7 @@
           "image": "https://image.anitabi.cn/points/115908/7evkbmy2.jpg?plan=h160",
           "ep": 1,
           "s": 128,
-          "geo": [34.8905, 135.8065],
+          "geo": [34.8896, 135.8083],
           "origin": "Anitabi@卜卜口",
           "originURL": "https://www.anitabi.cn/map?bangumiId=115908&pid=7evkbmy2"
         },
@@ -47,7 +47,7 @@
           "image": "https://image.anitabi.cn/points/115908/ujibashi01.jpg?plan=h160",
           "ep": 2,
           "s": 340,
-          "geo": [34.8918, 135.8077],
+          "geo": [34.8931, 135.8065],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=115908&pid=ujibashi01"
         },
@@ -58,7 +58,7 @@
           "image": "https://image.anitabi.cn/points/115908/daikichi02.jpg?plan=h160",
           "ep": 8,
           "s": 1102,
-          "geo": [34.8933, 135.811],
+          "geo": [34.8929, 135.8129],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=115908&pid=daikichi02"
         },
@@ -69,7 +69,7 @@
           "image": "https://image.anitabi.cn/points/115908/ujibunka03.jpg?plan=h160",
           "ep": 5,
           "s": 720,
-          "geo": [34.8815, 135.7988],
+          "geo": [34.8798, 135.804],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=115908&pid=ujibunka03"
         },
@@ -80,7 +80,7 @@
           "image": "https://image.anitabi.cn/points/115908/keihanuji04.jpg?plan=h160",
           "ep": 1,
           "s": 95,
-          "geo": [34.8932, 135.8092],
+          "geo": [34.894, 135.8069],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=115908&pid=keihanuji04"
         }
@@ -181,7 +181,7 @@
           "image": "https://image.anitabi.cn/points/174043/kimi02.jpg?plan=h160",
           "ep": 1,
           "s": 3180,
-          "geo": [35.7053, 139.6367],
+          "geo": [35.7047, 139.651],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=174043&pid=kimi02"
         },
@@ -192,7 +192,7 @@
           "image": "https://image.anitabi.cn/points/174043/kimi03.jpg?plan=h160",
           "ep": 1,
           "s": 4560,
-          "geo": [36.2389, 137.1867],
+          "geo": [36.2367, 137.1896],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=174043&pid=kimi03"
         },
@@ -216,7 +216,7 @@
       "city": "鎌倉市",
       "cover": "https://image.anitabi.cn/bangumi/100001.jpg?plan=h160",
       "color": "#e04a2f",
-      "geo": [35.3069, 139.4874],
+      "geo": [35.3066, 139.5021],
       "zoom": 14.0,
       "points": [
         {
@@ -226,7 +226,7 @@
           "image": "https://image.anitabi.cn/points/100001/slam01.jpg?plan=h160",
           "ep": 1,
           "s": 22,
-          "geo": [35.3069, 139.4874],
+          "geo": [35.3066, 139.5021],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100001&pid=slam01"
         },
@@ -237,7 +237,7 @@
           "image": "https://image.anitabi.cn/points/100001/slam02.jpg?plan=h160",
           "ep": 1,
           "s": 35,
-          "geo": [35.3078, 139.4869],
+          "geo": [35.3067, 139.5007],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100001&pid=slam02"
         },
@@ -261,7 +261,7 @@
       "city": "大洗町",
       "cover": "https://image.anitabi.cn/bangumi/100002.jpg?plan=h160",
       "color": "#5b8c3a",
-      "geo": [36.3145, 140.5936],
+      "geo": [36.309, 140.572],
       "zoom": 13.5,
       "points": [
         {
@@ -271,7 +271,7 @@
           "image": "https://image.anitabi.cn/points/100002/garu01.jpg?plan=h160",
           "ep": 2,
           "s": 155,
-          "geo": [36.3145, 140.5936],
+          "geo": [36.3158, 140.5878],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100002&pid=garu01"
         },
@@ -282,7 +282,7 @@
           "image": "https://image.anitabi.cn/points/100002/garu02.jpg?plan=h160",
           "ep": 1,
           "s": 88,
-          "geo": [36.3122, 140.5772],
+          "geo": [36.3104, 140.5707],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100002&pid=garu02"
         },
@@ -293,7 +293,7 @@
           "image": "https://image.anitabi.cn/points/100002/garu03.jpg?plan=h160",
           "ep": 4,
           "s": 512,
-          "geo": [36.3106, 140.5722],
+          "geo": [36.3146, 140.5634],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100002&pid=garu03"
         },
@@ -304,7 +304,7 @@
           "image": "https://image.anitabi.cn/points/100002/garu04.jpg?plan=h160",
           "ep": 6,
           "s": 903,
-          "geo": [36.3018, 140.5895],
+          "geo": [36.2961, 140.5635],
           "origin": "Anitabi",
           "originURL": "https://www.anitabi.cn/map?bangumiId=100002&pid=garu04"
         }

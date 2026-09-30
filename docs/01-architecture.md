@@ -37,8 +37,9 @@
                                  │ JSON-RPC over stdio
                   ┌──────────────┼──────────────┐
                   ▼              ▼              ▼
-           mcp_servers/seichi   天气 MCP       路线 MCP
-           圣地巡礼 ✅           ⏳              ⏳
+           mcp_servers/seichi   .../weather    .../route
+           圣地巡礼 ✅           天气 ✅         路线 ✅
+           （本地数据）          Open-Meteo      OSRM + Nominatim
 ```
 
 ## 一次请求的完整旅程

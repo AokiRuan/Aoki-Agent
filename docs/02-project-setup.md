@@ -20,7 +20,10 @@ Aoki-Agent/
 │   │   └── routes/             /chat（SSE）与 /sessions
 │   ├── agent/                核心：自建 loop 与 harness（见 01 章的依赖方向）
 │   ├── store/                会话持久化：接口 + 内存/Postgres 两种实现
-│   ├── mcp_servers/seichi/   自建圣地巡礼 MCP server（见 03 章）
+│   ├── mcp_servers/          三个自建 MCP server
+│   │   ├── seichi/             圣地巡礼，读本地数据（见 03 章）
+│   │   ├── weather/            天气，调 Open-Meteo（见 04 章）
+│   │   └── route/              路线与地理编码，调 OSRM + Nominatim（见 04 章）
 │   └── tests/                pytest 测试
 ├── frontend/                 React（待初始化，需先装 Node）
 ├── evals/                    评测（Day 6+）
@@ -144,20 +147,28 @@ uvicorn backend.app.main:app --reload
 [pytest]
 testpaths = backend/tests
 asyncio_mode = auto
+addopts = -m "not network"
+markers =
+    network: 访问真实外部 API 的集成测试（受网络与限流影响，默认不跑）
 ```
 
-`asyncio_mode = auto` 让 `async def test_xxx()` 直接能跑，不用每个都加 `@pytest.mark.asyncio`。项目里大量是异步代码，这个配置省很多事。
+- `asyncio_mode = auto` 让 `async def test_xxx()` 直接能跑，不用每个都加 `@pytest.mark.asyncio`。项目里大量是异步代码，这个配置省很多事
+- `addopts = -m "not network"` 让打真实外部 API 的测试默认不跑，原因见 [04 章](04-external-mcp-servers.md#5-真实网络的测试单独放)
 
 ```powershell
-python -m pytest            # 全部
+python -m pytest            # 全部单元测试（不连网络）
 python -m pytest -v         # 显示每个测试名
 python -m pytest -k seichi  # 只跑名字含 seichi 的
+python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 ```
 
 当前的测试：
 
 - [test_app.py](../backend/tests/test_app.py) —— 应用能起来、`/health` 正常
-- [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server 的工具，包括一个**真实 stdio 子进程往返**的测试（见 03 章）
+- [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server，包括一个**真实 stdio 子进程往返**的测试（见 03 章）
+- [test_weather.py](../backend/tests/test_weather.py) · [test_route.py](../backend/tests/test_route.py) —— 天气与路线 MCP server，用 MockTransport 模拟外部服务（见 04 章）
+- [test_external_network.py](../backend/tests/test_external_network.py) —— 真实调用三个外部服务的集成测试，默认不跑
+- [stdio_helper.py](../backend/tests/stdio_helper.py) —— 把 MCP server 拉成子进程的辅助函数（不是测试文件，文件名不以 `test_` 开头所以不会被收集）
 
 ## 设计取舍
 

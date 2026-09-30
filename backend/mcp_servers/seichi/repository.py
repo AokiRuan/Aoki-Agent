@@ -70,6 +70,7 @@ class MockRepository(SeichiRepository):
         return None
 
 
+# 缓存返回的是同一个对象：调用方只能读，不能修改，否则会污染所有后续调用
 @lru_cache(maxsize=1)
 def _load(path: Path) -> dict[str, Any]:
     with open(path, encoding="utf-8") as f:
