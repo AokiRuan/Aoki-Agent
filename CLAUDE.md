@@ -23,8 +23,10 @@
 - 所有命令在项目根目录执行，用 `python -m 模块路径`，不要按文件路径运行脚本（项目用绝对导入 `backend.xxx`）
 - venv 由 uv 创建，**没有 pip**：装包用 `uv pip install`；国内网络加 `--index-url https://pypi.tuna.tsinghua.edu.cn/simple`
 - Windows 终端需 `$env:PYTHONIOENCODING = "utf-8"`，否则打印 emoji 崩溃
-- 测试：`python -m pytest`（配置见 pytest.ini，`asyncio_mode = auto`）
+- 测试：`python -m pytest`（配置见 pytest.ini，`asyncio_mode = auto`；打真实外部 API 的测试标记为 `network`，默认不跑）
+- 命令行和 agent 对话：`python -m backend.cli "问题"`（会消耗 LLM token）；列出全部工具：`python -m backend.agent.mcp_client`
 - 启动：`uvicorn backend.app.main:app --reload`
+- `MCPClientPool` 必须在同一个 asyncio task 里打开和关闭（用 `async with`），不要用 pytest 的 async yield fixture 管理它
 
 ## 架构约束
 

@@ -2,7 +2,7 @@
 
 开发过程中真实遇到的问题。每条按「现象 → 根因 → 解法 → 教训」记录。新坑追加在对应分类末尾。
 
-**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 与流式输出](#llm-与流式输出)
+**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 行为与输出](#llm-行为与输出)
 
 ---
 
@@ -103,6 +103,20 @@ print(inspect.signature(MCPServer.tool))
 - **解法**：可预期的错误主动 `return {"error": "具体原因"}`；client 端检查 `is_error` 而不是 `try/except`
 - **详细对比**：[03 章 · 原则 5](03-mcp-server.md#5-错误是数据不是异常)
 
+### 测试 teardown 报 "exit cancel scope in a different task"
+
+- **现象**：用 pytest 异步 fixture 管理 MCP 连接（`yield` 前 connect、后 close），测试本身全部通过，但每个测试在 teardown 阶段报 `RuntimeError: Attempted to exit cancel scope in a different task than it was entered in`
+- **根因**：MCP SDK 的 `stdio_client` 基于 anyio，要求连接在同一个 asyncio task 里打开和关闭；pytest-asyncio 在不同的 task 里执行 fixture 的 setup 和 teardown
+- **解法**：`MCPClientPool` 实现 `__aenter__` / `__aexit__`，每个测试里用 `async with`
+- **教训**：FastAPI 的 lifespan（一个函数里 yield 前后）天然满足这个约束；「startup 事件打开、shutdown 事件关闭」则不满足。详见 [07 章](07-mcp-client.md#生命周期必须在同一个-task-里打开和关闭)
+
+### 子进程拿不到终端里设置的环境变量
+
+- **现象**：（预防性发现，未实际出错）在终端设置的环境变量，MCP server 子进程里读不到
+- **根因**：实测 SDK 启动子进程时用 `get_default_environment() | server.env`，默认只有 12 个系统变量（PATH、APPDATA、TEMP 等），出于安全考虑不继承其他变量
+- **解法**：需要的变量显式传入 `StdioServerParameters(env=...)`。项目里透传了代理相关变量，否则在代理环境下天气/路线 server 会连不上外网，且只报一个笼统的超时
+- **教训**：遇到「终端里能用、子进程里不行」，先查环境变量
+
 ---
 
 ## 第三方 API
@@ -137,7 +151,7 @@ print(inspect.signature(MCPServer.tool))
 
 ---
 
-## LLM 与流式输出
+## LLM 行为与输出
 
 ### 流式输出每个字重复两遍
 
@@ -145,3 +159,17 @@ print(inspect.signature(MCPServer.tool))
 - **根因**：`hello_agents` 的 `HelloAgentsLLM.think()` 是个生成器，它**在 yield 之前自己已经 print 了一遍**；调用方 `for chunk in llm.think(...)` 里又 print 了一遍
 - **解法**：调用方只消费、不再打印
 - **教训**：生成器最好只负责产出数据，不要在里面做 print 这类副作用。这正是本项目 `AgentLoop` 只 yield `AgentEvent`、由上层决定怎么展示的原因（[01 章 · 原则二](01-architecture.md#原则二用事件流对外输出而不是直接写响应)）
+
+### 中文提问，LLM 却用英文说「我来查一下」
+
+- **现象**：DeepSeek 返回 tool_calls 时附带的说明文字是英文（`I'll look up that anime first.`），最终回答却是中文
+- **根因**：模型在「调工具前的过渡语」上有英文的倾向；system prompt 里抽象的「使用用户的语言」没能覆盖到这一句
+- **解法**：把规则写具体：「调用工具前的说明文字也一样：用户用中文提问，就用中文说『我来查一下』，不要用英文」
+- **教训**：写 prompt 时，**具体的例子比抽象的规则管用**
+
+### LLM 在回答里抄错了坐标
+
+- **现象**：LLM 把京都音乐厅的纬度 35.0504 写成了 34.0504
+- **根因**：LLM 生成文本时抄写长数字不可靠
+- **解法**：不让它抄——前端地图用 `tool_result` 事件里的结构化数据打点，这条通道不经过 LLM；system prompt 里要求不要在回答里写经纬度
+- **教训**：**精确数据（坐标、价格、ID）走结构化通道，LLM 只负责自然语言**。详见 [05 章实测发现](05-agent-loop.md#实测发现)

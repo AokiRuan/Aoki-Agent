@@ -22,6 +22,7 @@ class AgentEvent(BaseModel):
     payload: Optional[dict[str, Any]] = None
     # error: 错误信息
     message: Optional[str] = None
-
-
-# TODO(Day 2): 按需补充构造辅助函数，例如 token_event() / tool_call_event()
+    # 各事件 payload 的内容：
+    #   tool_call   → LLM 给出的参数
+    #   tool_result → {"is_error": bool, "data": 工具的结构化结果}
+    #   done        → {"new_messages": [...], "iterations": int, "usage": {...}}

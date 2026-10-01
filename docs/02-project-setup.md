@@ -18,7 +18,8 @@ Aoki-Agent/
 │   │   ├── main.py             应用入口与 lifespan（启动/关闭时做什么）
 │   │   ├── config.py           所有配置，从环境变量读
 │   │   └── routes/             /chat（SSE）与 /sessions
-│   ├── agent/                核心：自建 loop 与 harness（见 01 章的依赖方向）
+│   ├── agent/                核心：自建 loop、harness、LLM 与 MCP 客户端（见 05~07 章）
+│   ├── cli.py                命令行入口，不经 HTTP 直接和 agent 对话（见 05 章）
 │   ├── store/                会话持久化：接口 + 内存/Postgres 两种实现
 │   ├── mcp_servers/          三个自建 MCP server
 │   │   ├── seichi/             圣地巡礼，读本地数据（见 03 章）
@@ -167,6 +168,10 @@ python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 - [test_app.py](../backend/tests/test_app.py) —— 应用能起来、`/health` 正常
 - [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server，包括一个**真实 stdio 子进程往返**的测试（见 03 章）
 - [test_weather.py](../backend/tests/test_weather.py) · [test_route.py](../backend/tests/test_route.py) —— 天气与路线 MCP server，用 MockTransport 模拟外部服务（见 04 章）
+- [test_llm.py](../backend/tests/test_llm.py) —— LLM 客户端对响应的解析、system prompt 的日期（见 05 章）
+- [test_loop.py](../backend/tests/test_loop.py) —— 用按剧本回复的假 LLM 测试 agent loop，不花 token（见 05 章）
+- [test_harness.py](../backend/tests/test_harness.py) —— 上下文裁剪、重复调用检测（见 06 章）
+- [test_mcp_client.py](../backend/tests/test_mcp_client.py) —— 真实拉起子进程测试工具聚合与三种调用结局（见 07 章）
 - [test_external_network.py](../backend/tests/test_external_network.py) —— 真实调用三个外部服务的集成测试，默认不跑
 - [stdio_helper.py](../backend/tests/stdio_helper.py) —— 把 MCP server 拉成子进程的辅助函数（不是测试文件，文件名不以 `test_` 开头所以不会被收集）
 

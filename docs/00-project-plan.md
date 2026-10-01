@@ -184,7 +184,7 @@ Harness 需要覆盖的点：
 | Day | 主线 | 产出 | 验收 |
 |---|---|---|---|
 | **1** ✅ | 数据 + 三个 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；圣地/天气/路线三个 MCP server 全部跑通 | ✅ 5 部作品 22 个地标（坐标已用 Nominatim 校正）；天气、路线实测调通真实 API |
-| **2** | Agent loop + 后端 | 自建 loop 接三个 MCP；FastAPI SSE 端点；`SessionStore` 接口 + 内存实现；Langfuse 打点 | curl 能流式拿到带工具调用的回答，Langfuse 看到完整 trace |
+| **2** 🚧 | Agent loop + 后端 | ✅ LLM 客户端、MCP 客户端、loop + harness（非流式）、system prompt、CLI；⏳ 流式、内存 SessionStore、FastAPI SSE、Langfuse | ✅ CLI 跑通三个场景与多轮对话；⏳ curl 流式、Langfuse trace |
 | **3** | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | 三个核心场景在浏览器里全部跑通，能切换会话 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
 | **5** | AWS 部署 + 缓冲 | App Runner 上线；域名/HTTPS；**留半天修 bug** | 公网 URL 可访问，三个场景可演示 |
@@ -209,12 +209,12 @@ Harness 需要覆盖的点：
 | AWS 部署踩坑 | Day 5 交不出公网 URL | 本地 compose + 录屏演示兜底；App Runner 不行切 EC2 |
 | ~~社区 MCP server 质量参差~~ | — | ✅ 已自建，天气/路线实测可用 |
 | 公共路线/地理编码服务不稳定 | 规划路线失败 | ✅ OSRM 不可用时降级为估算；Nominatim 限速 + 缓存 |
-| LLM tool calling 不稳定 | agent 乱调工具或不调 | 现用 DeepSeek 支持 function calling；LLM 层保留 provider 抽象，随时可换 |
+| ~~LLM tool calling 不稳定~~ | — | ✅ DeepSeek 实测表现良好，见「待定决策」 |
 | 流式 + tool calls 的解析 | loop 实现复杂度被低估 | Day 2 先做非流式版本跑通逻辑，再加流式 |
 
 ## 八、待定决策
 
-- **LLM**：继续 DeepSeek 还是换 tool calling 更强的模型——Day 2 跑起来后凭实际表现定
+- ~~**LLM**：继续 DeepSeek 还是换模型~~ → **继续用 DeepSeek**（2026-10-01）。三个场景实测：工具选择与调用顺序正确、会并行调用、工具失败后能自行重试、能按注入的日期换算「这周末」。问题都能靠 prompt 解决（英文过渡语、抄写坐标）。每个问题约 6600~8000 tokens
 - **生产 Postgres 托管**：RDS（AWS 原生，但要配 VPC / 安全组，吃掉 Day 5 半天）vs Neon / Supabase 这类托管免费层（拿到连接串就能用）——倾向后者，Day 5 的时间留给部署本身
 - **何时切回真实 Anitabi 数据**：需先解决坐标补全（42% 可从 originURL 提取，其余靠地理编码）与限流缓存。
   也可能维持 mock——demo 的技术展示点在 agent loop 与 MCP，不在数据完整性

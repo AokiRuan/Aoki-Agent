@@ -11,9 +11,9 @@
 | 02 | [工程搭建](02-project-setup.md) | 目录结构、uv 虚拟环境、依赖、配置、测试、怎么运行 | ✅ |
 | 03 | [MCP Server：圣地巡礼](03-mcp-server.md) | MCP 协议、stdio 传输、给 LLM 设计工具、Repository 模式、先探测再写代码 | ✅ |
 | 04 | [外部 API 型 MCP：天气与路线](04-external-mcp-servers.md) | 网络失败与降级、依赖注入测试、参数约束、路线排序算法、公共服务使用政策 | ✅ |
-| 05 | Agent Loop | LLM tool calling、自建循环、流式下 tool_calls 的拼接 | ⏳ Day 2 |
-| 06 | Harness | 迭代上限、错误恢复、上下文裁剪、重复调用检测 | ⏳ Day 2 |
-| 07 | MCP Client | 多 server 聚合、工具发现、调用分发 | ⏳ Day 2 |
+| 05 | [Agent Loop](05-agent-loop.md) | tool calling 消息协议、自建循环、system prompt、用假 LLM 测试、真实运行的发现 | ✅ 非流式（流式 ⏳） |
+| 06 | [Harness](06-harness.md) | 无状态策略、迭代上限与强制收尾、重复调用检测、上下文裁剪 | ✅ |
+| 07 | [MCP Client](07-mcp-client.md) | 多 server 聚合、子进程环境变量、三种调用结局、同一 task 的生命周期约束 | ✅ |
 | 08 | FastAPI 与 SSE | lifespan、流式响应、事件协议 | ⏳ Day 2 |
 | 09 | 可观测性：Langfuse | trace 的结构、怎么用 trace 调试 agent | ⏳ Day 2 |
 | 10 | React 前端 | SSE 消费、工具过程可视化、地图联动 | ⏳ Day 3 |
