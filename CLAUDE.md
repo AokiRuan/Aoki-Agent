@@ -25,13 +25,17 @@
 - Windows 终端需 `$env:PYTHONIOENCODING = "utf-8"`，否则打印 emoji 崩溃
 - 测试：`python -m pytest`（配置见 pytest.ini，`asyncio_mode = auto`；打真实外部 API 的测试标记为 `network`，默认不跑）
 - 命令行和 agent 对话：`python -m backend.cli "问题"`（会消耗 LLM token）；列出全部工具：`python -m backend.agent.mcp_client`
-- 启动：`uvicorn backend.app.main:app --reload`
+- 启动：`uvicorn backend.app.main:app --reload`；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
+- 测试替身在 `backend/tests/fakes.py`；`conftest.py` 清空了 Langfuse key，测试永不往线上写数据
+- Langfuse 项目在 **JP 区域**（`jp.cloud.langfuse.com`）；按 trace 读数据用 `GET /api/public/v2/observations`（旧的 traces 列表接口已 410，单 trace 接口限 5 次/分钟）
 - `MCPClientPool` 必须在同一个 asyncio task 里打开和关闭（用 `async with`），不要用 pytest 的 async yield fixture 管理它
 
 ## 架构约束
 
 - **依赖方向**：`backend/agent/` 不得 import `backend/app/` 或 `backend/store/`。loop 对 HTTP、数据库、具体 LLM 一无所知，外部依赖通过构造参数注入
 - loop 只 yield `AgentEvent`（backend/agent/events.py），不直接写响应、不 print
+- 分层：路由只做 SSE 编码 → `ChatService`（会话、持久化，CLI 共用）→ loop。流式接口的校验放在依赖里（响应开始后无法再返回 4xx）
+- 追踪用装饰器（`TracedLLM` / `TracedTools`）包住 LLM 与工具，不往 loop 里写 Langfuse 代码
 - 会变的东西先立接口（`SessionStore`、`LLMClient`、`SeichiRepository`）
 - 工具错误作为数据返回给 LLM，不抛异常中断对话
 

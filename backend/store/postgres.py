@@ -31,7 +31,7 @@ class PostgresSessionStore(SessionStore):
     async def list_sessions(self) -> list[StoredSession]:
         raise NotImplementedError
 
-    async def append_message(self, session_id: str, message: StoredMessage) -> None:
+    async def append_messages(self, session_id: str, messages: list[StoredMessage]) -> None:
         raise NotImplementedError
 
     async def get_messages(self, session_id: str) -> list[StoredMessage]:

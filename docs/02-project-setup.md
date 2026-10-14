@@ -14,8 +14,11 @@
 ```
 Aoki-Agent/
 ├── backend/
-│   ├── app/                  Web 层：FastAPI 入口、路由、配置
-│   │   ├── main.py             应用入口与 lifespan（启动/关闭时做什么）
+│   ├── app/                  Web 层（见 08 章）
+│   │   ├── main.py             create_app() 与 lifespan（启动/关闭时做什么）
+│   │   ├── components.py       组装点：创建并连接所有组件，CLI 也用它
+│   │   ├── chat_service.py     一轮对话：载入历史 → 运行 agent → 入库
+│   │   ├── deps.py · schemas.py  FastAPI 依赖、请求/响应模型
 │   │   ├── config.py           所有配置，从环境变量读
 │   │   └── routes/             /chat（SSE）与 /sessions
 │   ├── agent/                核心：自建 loop、harness、LLM 与 MCP 客户端（见 05~07 章）
@@ -172,6 +175,10 @@ python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 - [test_loop.py](../backend/tests/test_loop.py) —— 用按剧本回复的假 LLM 测试 agent loop，不花 token（见 05 章）
 - [test_harness.py](../backend/tests/test_harness.py) —— 上下文裁剪、重复调用检测（见 06 章）
 - [test_mcp_client.py](../backend/tests/test_mcp_client.py) —— 真实拉起子进程测试工具聚合与三种调用结局（见 07 章）
+- [test_api.py](../backend/tests/test_api.py) · [test_store.py](../backend/tests/test_store.py) —— HTTP 接口与会话存储，注入假 LLM 走真实路由与 SSE 编码（见 08 章）
+- [test_tracing.py](../backend/tests/test_tracing.py) —— Langfuse 装饰器，用假客户端，不连网络（见 09 章）
+- [fakes.py](../backend/tests/fakes.py) —— 假 LLM、假工具等测试替身（不是测试文件）
+- [conftest.py](../backend/tests/conftest.py) —— pytest 在所有测试前自动执行：清空 Langfuse key，保证测试不往线上写数据
 - [test_external_network.py](../backend/tests/test_external_network.py) —— 真实调用三个外部服务的集成测试，默认不跑
 - [stdio_helper.py](../backend/tests/stdio_helper.py) —— 把 MCP server 拉成子进程的辅助函数（不是测试文件，文件名不以 `test_` 开头所以不会被收集）
 
@@ -183,7 +190,7 @@ python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 
 **为什么不用 conda？**
 
-你的 Python 本身来自 anaconda（`pyvenv.cfg` 里 `home = ...\anaconda3`），但项目环境用 uv venv 隔离。conda 适合科学计算那种带大量 C 依赖的场景；Web 项目用 venv 更轻，Docker 里也更好复现。
+项目最初的 venv 以 anaconda 的 Python 为基础解释器；系统重装后 anaconda 不在了，venv 随之失效，于是改由 uv 自行下载并管理 Python 3.12（重建方法见 [踩坑日志](pitfalls.md#换电脑重装系统后-venv-失效ide-报无法解析导入)）。conda 适合科学计算那种带大量 C 依赖的场景；Web 项目用 venv 更轻，Docker 里也更好复现。
 
 ## 动手验证
 

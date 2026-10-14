@@ -1,31 +1,46 @@
-"""FastAPI 入口。
+"""FastAPI 入口。讲解见 docs/08-fastapi-sse.md。
 
-lifespan 里要做的事：
-1. 连接所有 MCP server（自建圣地 server 走 stdio 子进程），完成工具发现
-2. 初始化 SessionStore（有 DATABASE_URL 用 Postgres，否则内存），建表
-3. 初始化 Langfuse
-关闭时反序清理。
+    uvicorn backend.app.main:app --reload
 
-同时托管 frontend 的构建产物，单容器对外。
+create_app() 接受一个「组件工厂」：生产环境用 default_components（真 LLM、真 MCP 子进程），
+测试传入一个返回假 LLM / 假工具的工厂。两者走的是完全相同的路由代码。
 """
-from contextlib import asynccontextmanager
+from __future__ import annotations
+
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from fastapi import FastAPI
 
+from .chat_service import ChatService
+from .components import Components, default_components
+from .config import settings
+from .routes import chat, sessions
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # TODO(Day 2): 启动 MCP / store / tracing，挂到 app.state
-    yield
-    # TODO(Day 2): 关闭 MCP 子进程与数据库连接
-
-
-app = FastAPI(title="Aoki-Agent", lifespan=lifespan)
-
-# TODO(Day 2): app.include_router(chat.router) / sessions.router
-# TODO(Day 3): 挂载 frontend/dist 静态文件，SPA fallback 到 index.html
+ComponentsFactory = Callable[[], AbstractAsyncContextManager[Components]]
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+def create_app(components_factory: ComponentsFactory | None = None) -> FastAPI:
+    factory = components_factory or (lambda: default_components(settings))
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # yield 之前：启动（拉起 MCP 子进程等）；yield 之后：关闭。
+        # 两者在同一个函数、同一个 task 里——MCP SDK 要求如此（见 docs/07）
+        async with factory() as components:
+            app.state.service = ChatService(components)
+            yield
+
+    app = FastAPI(title="Seichi-junrei Agent", lifespan=lifespan)
+    app.include_router(chat.router)
+    app.include_router(sessions.router)
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    # TODO(Day 3)：挂载 frontend/dist 静态文件，SPA fallback 到 index.html
+    return app
+
+
+app = create_app()

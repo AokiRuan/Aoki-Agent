@@ -22,18 +22,18 @@
 └──────────────┬───────────────┘
                │ POST /chat  ←→  SSE 事件流
 ┌──────────────▼───────────────┐
-│   app/  FastAPI              │  路由、SSE 编码、生命周期管理               🚧
+│   app/  FastAPI              │  路由、SSE 编码、生命周期、ChatService      ✅
 └──────┬───────────────┬───────┘
        │               │
        ▼               ▼
 ┌─────────────┐  ┌─────────────────────────────┐
-│ store/  🚧  │  │ agent/                       │  ← 项目核心
-│ 会话持久化   │  │  loop     主循环         ✅   │  （流式 ⏳）
-│             │  │  harness  边界策略       ✅   │
-│             │  │  llm      LLM 抽象       ✅   │
+│ store/      │  │ agent/                       │  ← 项目核心
+│ 会话持久化   │  │  loop     主循环（流式） ✅   │
+│ 内存 ✅      │  │  harness  边界策略       ✅   │
+│ Postgres ⏳  │  │  llm      LLM 抽象       ✅   │
 │             │  │  mcp_client 工具聚合     ✅   │
 │             │  │  events   对外事件契约   ✅   │
-│             │  │  tracing  Langfuse       ⏳   │
+│             │  │  tracing  Langfuse       ✅   │
 └─────────────┘  └───────────────┬─────────────┘
                                  │ JSON-RPC over stdio
                   ┌──────────────┼──────────────┐
@@ -50,7 +50,7 @@
 | # | 发生了什么 | 负责模块 | 状态 |
 |---|---|---|---|
 | 1 | 前端 `POST /chat`，带上 `session_id` 和用户消息 | frontend | ⏳ |
-| 2 | 路由从 store 读出这个会话的历史消息，追加本轮用户消息 | [app/routes/chat.py](../backend/app/routes/chat.py) · [store/](../backend/store/) | 🚧 |
+| 2 | ChatService 从 store 读出这个会话的历史消息，加上 system prompt 和本轮用户消息 | [app/chat_service.py](../backend/app/chat_service.py) · [store/](../backend/store/) | ✅ |
 | 3 | 调 `AgentLoop.run(messages)`，拿到一个事件流 | [agent/loop.py](../backend/agent/loop.py) | ✅ |
 | 4 | loop 把历史 + **所有 MCP 工具的 schema** 一起发给 LLM | [agent/llm.py](../backend/agent/llm.py) · [agent/mcp_client.py](../backend/agent/mcp_client.py) | ✅ |
 | 5 | LLM 回复 `tool_calls: search_anime(title="莉可丽丝")` | LLM | — |
@@ -59,10 +59,10 @@
 | 8 | seichi server 查数据，返回 `anime_id: 364450` | [mcp_servers/seichi/](../backend/mcp_servers/seichi/) | ✅ |
 | 9 | loop yield `tool_result`，把结果追加进 messages，**回到第 4 步** | loop | ✅ |
 | 10 | 第二轮：LLM 看到 anime_id，决定调 `list_spots(364450)`，重复 5~9 | — | — |
-| 11 | 第三轮：LLM 拿到 5 个地标，不再调工具，开始输出文字 → `token` 事件 | loop | ✅ 整段输出（逐字流式 ⏳） |
-| 12 | `done` 事件；路由把本轮 assistant 消息（含工具调用记录）写回 store | chat.py · store | 🚧 |
+| 11 | 第三轮：LLM 拿到 5 个地标，不再调工具，开始输出文字 → 一串 `token` 事件，逐字流式 | loop | ✅ |
+| 12 | `done` 事件；ChatService 把本轮消息（含工具调用记录与结构化结果）写回 store，路由把事件编码成 SSE | chat_service.py · routes/chat.py | ✅ |
 
-贯穿全程：每一轮 LLM 调用、每一次工具调用都被 Langfuse 记录成 trace（[agent/tracing.py](../backend/agent/tracing.py)，🚧）。
+贯穿全程：每一轮 LLM 调用、每一次工具调用都被 Langfuse 记录成 trace（[agent/tracing.py](../backend/agent/tracing.py)，✅）。
 
 注意第 9 步的"回到第 4 步"——**这个循环就是 agent loop**。它跑几圈是 LLM 决定的，不是你决定的。这也是为什么需要 harness：万一 LLM 永远不停呢？
 
@@ -191,6 +191,6 @@ Select-String -Path backend\agent\*.py -Pattern "from backend\.(app|store)|from 
 
 ## 延伸思考
 
-1. 原则一说 loop "不知道有数据库"。但第 12 步需要把 assistant 消息写回 store——这件事为什么放在 chat.py 而不是 loop 里？如果放进 loop 会破坏什么？
+1. 原则一说 loop "不知道有数据库"。但第 12 步需要把 assistant 消息写回 store——这件事为什么放在 chat_service.py 而不是 loop 里？如果放进 loop 会破坏什么？（[08 章](08-fastapi-sse.md#分层路由chatserviceloop)有答案）
 2. 原则五说"把错误交给 LLM"。有没有哪类错误**不应该**交给 LLM，而应该直接中断？（提示：想想 API key 失效、或者 LLM 服务本身挂了）
 3. `tool_call_id` 解决了并发工具调用的对应问题。那 LLM 真的会并发调工具吗？在圣地巡礼的三个场景里，哪一个最可能出现？

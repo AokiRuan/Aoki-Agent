@@ -9,7 +9,8 @@
 loop 对外只 yield AgentEvent，不写 HTTP 响应、不 print、不碰数据库。
 它依赖的三样东西（LLM、工具、策略）都从构造函数传入。
 
-当前是非流式版本：每轮拿到 LLM 的完整回复后再产出事件。流式见第 5 步。
+流式：LLM 每吐出一小段文字就转发成一个 token 事件；工具调用要等这一轮
+流式结束、参数拼完整之后才执行。
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from typing import Any, AsyncIterator
 
 from .events import AgentEvent
 from .harness import Harness
-from .llm import ChatModel, LLMResponse, ToolCall
+from .llm import ChatModel, LLMResponse, TextDelta, ToolCall
 from .mcp_client import ToolExecutor, ToolOutcome
 
 USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -42,6 +43,7 @@ class AgentLoop:
         start = len(history)
         schemas = self.tools.tool_schemas()
         # 本次运行的状态放在局部变量里：harness 被所有请求共享，不能存状态
+        # Counter 是标准库 collections 里的计数器。它本质上就是一个 dict，只多了一个关键特性：读取不存在的键时返回 0，而不是报错。
         seen_calls: Counter[str] = Counter()
         usage: Counter[str] = Counter()
 
@@ -57,20 +59,27 @@ class AgentLoop:
             else:
                 request, tools = history, schemas
 
+            resp: LLMResponse | None = None
             try:
-                resp = await self.llm.chat(request, tools)
+                async for item in self.llm.stream(request, tools):
+                    if isinstance(item, TextDelta):
+                        # 文字一到就转发，用户不用等整段生成完
+                        yield AgentEvent(type="token", content=item.text)
+                    else:
+                        resp = item
             except Exception as e:  # noqa: BLE001
-                # LLM 本身挂了，没法「把错误交给 LLM 处理」，只能告诉调用方
+                # LLM 本身挂了，没法「把错误交给 LLM 处理」，只能告诉调用方。
+                # 注意：流式中途断开时，前面的 token 已经发出去了
                 yield AgentEvent(type="error", message=f"LLM 调用失败：{type(e).__name__}: {e}")
+                return
+            if resp is None:
+                yield AgentEvent(type="error", message="LLM 流式响应意外结束，没有给出完整回复")
                 return
 
             _accumulate(usage, resp.usage)
             if final_round:
                 resp = LLMResponse(content=resp.content, finish_reason=resp.finish_reason)
             history.append(resp.to_message())
-
-            if resp.content:
-                yield AgentEvent(type="token", content=resp.content)
 
             if not resp.tool_calls:
                 yield AgentEvent(
@@ -94,6 +103,7 @@ class AgentLoop:
             )
 
             # 按 tool_calls 的原始顺序追加结果；每条 tool 消息用 tool_call_id 对应到调用
+            # zip() 会把两个序列中相同位置的元素配对
             for tc, outcome in zip(resp.tool_calls, outcomes):
                 history.append({"role": "tool", "tool_call_id": tc.id, "content": outcome.text})
                 yield AgentEvent(

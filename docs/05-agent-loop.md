@@ -53,12 +53,13 @@ assistant  content: "明天京都晴，东京小雨……"            ← LLM �
 
 ```
 agent/
-├── llm.py       LLM 抽象：LLMResponse / ToolCall / ChatModel / LLMClient
+├── llm.py       LLM 抽象：TextDelta / LLMResponse / ToolCall / ChatModel / StreamAssembler / LLMClient
 ├── loop.py      核心循环
 ├── prompts.py   system prompt
 ├── harness.py   边界策略（06 章）
-└── mcp_client.py 工具层（07 章）
-cli.py           命令行入口：组装以上各部分
+├── mcp_client.py 工具层（07 章）
+└── tracing.py   Langfuse 追踪（09 章）
+cli.py           命令行入口：和 FastAPI 共用同一套组件（08 章）
 ```
 
 ### llm.py：让 loop 不认识 openai SDK
@@ -92,7 +93,54 @@ loop 只和这两个类打交道，**完全不知道 openai SDK 的存在**。�
 两个细节：
 
 - **同时保留 `arguments` 和 `raw_arguments`**。执行工具用解析后的 dict；写回历史用原文。如果 LLM 给了坏 JSON，写回历史时用原文，LLM 下一轮才能看到"自己写错了什么"
-- **`ChatModel` 用的是 `Protocol` 而不是 `ABC`**。假 LLM 写在测试里，没必要继承任何类，只要有签名一致的 `chat()` 方法就行。这正是 [03 章 ABC 对比表](03-mcp-server.md)里说的 Protocol 适用场景
+- **`self.model` 公开、`self._client` 加下划线**。单下划线是约定而不是限制（外部照样能访问），意思是"实现细节，类外别碰"。`model` 是对外的信息（tracing 要记录用的哪个模型）；`_client` 是 openai SDK 对象，外部如果绕过 `stream()` 直接用它，就又依赖上了具体 SDK，`FakeLLM` 也没有这个属性。测试替换 SDK 客户端走的是构造参数 `client=`，而不是去改 `_client`——这正是专门留这个参数的原因
+- **loop 运行时拿到的是 `LLMClient`**（开启 Langfuse 时是套了一层追踪的 `TracedLLM`，见 [09 章](09-langfuse.md)），`ChatModel` 只出现在 `AgentLoop.__init__` 的类型标注里，表达"任何有 `stream(messages, tools)` 方法的对象都行"。不标注成 `LLMClient` 的原因：测试要传入毫无继承关系的 `FakeLLM`，标成具体类会让类型检查器报错；loop 只依赖 `stream()` 这一个方法，`LLMClient` 的其他部分（`model` 属性、非流式的 `chat()`）变化不应影响它；`LLMClient` 绑定了 openai SDK，loop 应依赖抽象而非具体 SDK。注意 Python 运行时**不检查**类型标注，这层约束只对类型检查器和读代码的人生效。工具层的 `ToolExecutor` 是同样的写法
+- **`ChatModel` 用的是 `Protocol` 而不是 `ABC`**。假 LLM 写在测试里，没必要继承任何类，只要有签名一致的 `stream()` 方法就行。这正是 [03 章 ABC 对比表](03-mcp-server.md)里说的 Protocol 适用场景。后来加的 `TracedLLM` 也一样：它没继承任何类，只因为方法签名对得上，就能直接替换进 loop
+
+### 流式：把分片拼回完整回复
+
+流式模式下，LLM 不是一次返回完整回复，而是一小片一小片地发过来。实测 DeepSeek 的分片方式（同时查两个城市天气）：
+
+```
+#2   content='好的'
+#3   content='，'          ← 文字先到，每片一两个字
+...
+#12  content='。'
+#13  tool_calls[index=0, id=call_00, name=get_weather_forecast, args='']   ← 第一片带 id 和工具名
+#14  tool_calls[index=0, args='{']                                         ← 之后只有 index 和参数碎片
+#16  tool_calls[index=0, args='lat']
+#24  tool_calls[index=0, args='l']         ← 碎到 "lng" 被切成 "l" + "ng"
+#25  tool_calls[index=0, args='ng']
+...
+#38  tool_calls[index=1, id=call_01, ...]  ← 第二个工具调用开始
+...
+#63  finish_reason=tool_calls  usage={...}   ← 最后一片
+```
+
+由此得出三条规则，都写在 `StreamAssembler` 里：
+
+1. **工具调用按 `index` 拼接**。`id` 和 `name` 只在第一片出现，参数字符串要把所有碎片按顺序连起来，**全部到齐之前它不是合法 JSON**，不能提前解析
+2. **文字先到、工具调用后到**。所以"我先查一下"可以立刻显示给用户，而工具要等这一轮流完才能执行
+3. **usage 的位置因服务商而异**。DeepSeek 放在最后一片（和 `finish_reason` 一起）；OpenAI 官方是额外再发一片 `choices` 为空的。两种都要处理。另外请求时必须带 `stream_options={"include_usage": True}`，否则流式模式下根本不返回 usage
+
+`LLMClient.stream()` 对外的约定是：**先产出若干个 `TextDelta`，最后恰好产出一个 `LLMResponse`**（拼好的完整回复）。
+
+```python
+async def stream(self, messages, tools=None) -> AsyncIterator[TextDelta | LLMResponse]:
+    resp = await self._client.chat.completions.create(..., stream=True, stream_options={"include_usage": True})
+    assembler = StreamAssembler()
+    async for chunk in resp:
+        text = assembler.feed(chunk)
+        if text:
+            yield TextDelta(text)
+    yield assembler.result()
+```
+
+这个设计让 loop 的改动非常小：文字片段直接转发成 `token` 事件，最后那个 `LLMResponse` 的处理逻辑和非流式版本**完全一样**。拼接的复杂度全部关在 `StreamAssembler` 里。
+
+> **Python 知识点**：`ChatModel` 协议里写的是 `def stream(...)` 而不是 `async def`。因为 async generator 函数（函数体里有 `yield` 的 `async def`）被调用时**不需要 await**，直接返回一个异步迭代器，用 `async for` 消费。协议描述的是"调用后得到什么"，所以写 `def ... -> AsyncIterator[...]`。
+
+非流式的 `chat()` 保留着，loop 已不再用它，留给将来评测脚本这类不需要逐字输出的场景。
 
 ### loop.py：核心循环
 
@@ -103,10 +151,11 @@ history = harness.trim(list(messages))      # ① 复制一份，不修改调用
 while True:
     iteration += 1
     final_round = not harness.should_continue(iteration)   # ② 超过上限了吗
-    resp = await llm.chat(history, None if final_round else schemas)
+    async for item in llm.stream(history, None if final_round else schemas):
+        if isinstance(item, TextDelta): yield token 事件     # 文字一到就转发
+        else:                           resp = item           # 最后一个是完整回复
     history.append(resp.to_message())
 
-    if resp.content:        yield token 事件
     if not resp.tool_calls: yield done 事件; return     # ③ 没有工具调用 = 最终回答
 
     for tc in resp.tool_calls: yield tool_call 事件
@@ -149,6 +198,8 @@ yield AgentEvent(type="done", payload={
 
 这回答了 [01 章延伸思考第 2 题](01-architecture.md#延伸思考)。
 
+流式带来一个新情况：**LLM 流到一半断开**。这时前面的 `token` 事件已经发给用户了，无法撤回，于是事件序列是"几个 token → error"。前端要能处理这种"说到一半出错"的状态（`test_stream_breaking_midway_yields_partial_tokens_then_error` 覆盖了这个场景）。
+
 ### prompts.py：system prompt
 
 [prompts.py](../backend/agent/prompts.py) 每次请求都重新生成，里面写了几类内容：
@@ -171,7 +222,7 @@ yield AgentEvent(type="done", payload={
 
 ### cli.py：组装点
 
-[cli.py](../backend/cli.py) 把各部分创建出来、注入 loop：
+最早的 [cli.py](../backend/cli.py) 自己把各部分创建出来、注入 loop：
 
 ```python
 llm = LLMClient(settings.llm_model, settings.llm_api_key, settings.llm_base_url)
@@ -179,9 +230,11 @@ async with MCPClientPool() as tools:
     loop = AgentLoop(llm, tools, Harness(max_iterations=settings.max_iterations))
 ```
 
-这种"负责创建所有对象并把它们接在一起"的地方，叫**组装点（composition root）**。项目里只有两个组装点：`cli.py` 和将来的 FastAPI lifespan。其他模块都只接收依赖，不自己创建依赖。
+这种"负责创建所有对象并把它们接在一起"的地方，叫**组装点（composition root）**。其他模块都只接收依赖，不自己创建依赖。
 
-CLI 还维护了多轮对话的历史：每次回答结束后，把用户消息和 `new_messages` 追加进历史。**system prompt 不进历史**，因为它每次都重新生成（日期会变）。
+接入 FastAPI 后，组装逻辑挪到了 [app/components.py](../backend/app/components.py)，CLI 和 FastAPI 共用它和同一个 `ChatService`（[08 章](08-fastapi-sse.md)）。所以**终端里看到的行为就是 HTTP 接口的行为**，只是把 SSE 换成了打印。多轮历史也不再由 CLI 自己维护，而是存在会话存储里。
+
+CLI 的另一个变化是流式打印：`token` 事件用 `print(..., end="", flush=True)` 逐片输出（[Day 0 踩过的 flush 坑](pitfalls.md#流式输出每个字重复两遍)正好用上），开始打印工具信息前先补一个换行。
 
 ## 实测发现
 
@@ -221,9 +274,12 @@ class FakeLLM:
         self.script = list(script)       # 预先写好的回复
         self.requests = []               # 记录每次收到了什么
 
-    async def chat(self, messages, tools=None):
+    async def stream(self, messages, tools=None):
         self.requests.append({"messages": copy.deepcopy(messages), "tools": tools})
-        return self.script.pop(0)
+        step = self.script.pop(0)
+        for i in range(0, len(step.content or ""), 2):   # 模拟流式：2 个字一片
+            yield TextDelta(step.content[i:i + 2])
+        yield step                                       # 最后给出完整回复
 
 llm = FakeLLM(
     with_tools(call("c1", title="莉可丽丝")),   # 第 1 轮：调工具
@@ -241,13 +297,17 @@ llm = FakeLLM(
 
 一个有意思的测试是 `test_parallel_tool_calls_run_concurrently`：两个工具调用都等待一个"两个都已开始"的信号。如果是串行执行，第一个调用会一直等不到第二个开始，最终超时失败。用这种方式**证明**了它们确实是并行的。
 
-[test_llm.py](../backend/tests/test_llm.py) 用 04 章同样的 `httpx.MockTransport` 手法测试 `LLMClient` 对响应的解析：`AsyncOpenAI` 接受一个 `http_client` 参数，传入走 MockTransport 的 httpx 客户端即可。
+`FakeLLM` 等测试替身放在 [fakes.py](../backend/tests/fakes.py)，loop 测试和 [08 章](08-fastapi-sse.md)的 API 测试共用。
+
+[test_llm.py](../backend/tests/test_llm.py) 用 04 章同样的 `httpx.MockTransport` 手法测试 `LLMClient`：`AsyncOpenAI` 接受一个 `http_client` 参数，传入走 MockTransport 的 httpx 客户端即可。流式测试让 MockTransport 返回一段 `text/event-stream` 响应体，里面的分片**照着 DeepSeek 实测的切法**来切（参数碎到 `"l"` + `"ng"`），走的是 openai SDK 真实的流式解析代码。usage 的两种位置（DeepSeek 式、OpenAI 式）各有一个测试。
 
 ## 设计取舍
 
 **为什么先做非流式？**
 
-流式模式下，`tool_calls` 是分成很多片段陆续到达的，要按 index 把碎片拼起来，逻辑复杂很多。先用非流式把"调工具 → 回填 → 再问"的主逻辑跑通、测透，再加流式，出了问题容易定位。现在的 `token` 事件是一次输出整段文字，改成流式后会变成逐字输出，**事件类型不变，前端不用改**。
+流式模式下，`tool_calls` 是分成很多片段陆续到达的，要按 index 把碎片拼起来，逻辑复杂很多。先用非流式把"调工具 → 回填 → 再问"的主逻辑跑通、测透，再加流式，出了问题容易定位。
+
+事后看这个顺序是对的：改成流式时，loop 只改了"怎么拿到 LLMResponse"那几行，后面的工具执行、回填、done 逻辑一行没动；`token` 事件从"一次一整段"变成"一次几个字"，**事件类型不变，事件的消费方（CLI、SSE 路由）不用改协议**。原有的 loop 测试只把 `FakeLLM` 换成流式版本，断言基本没变就全部通过了。
 
 **tool_calls 附带的 content 要不要输出？**
 

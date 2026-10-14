@@ -123,18 +123,20 @@ Harness 需要覆盖的点：
 
 `tools/registry.py` 里的 schema 导出思路可以借鉴，但 MCP 协议本身已提供工具 schema，registry 的角色变成「MCP client 的聚合层」。
 
-### 4.4 后端 FastAPI
+### 4.4 后端 FastAPI ✅（Postgres 待 Day 4）
 
-- `POST /chat` — SSE 流式，事件类型：`token` / `tool_call` / `tool_result` / `done` / `error`；带 `session_id`，不存在则新建
+- `POST /chat` — SSE 流式（FastAPI 内置 `EventSourceResponse`），事件类型：`session` / `token` / `tool_call` / `tool_result` / `done` / `error`；带 `session_id`，不传则新建，不存在返回 404
 - `GET /sessions` — 会话列表（id、标题、更新时间）
 - `GET /sessions/{id}` — 拉取该会话的完整消息，用于刷新页面后恢复
-- 托管 React 构建产物，单容器对外
+- 托管 React 构建产物，单容器对外（⏳ Day 3）
 - 启动时拉起 MCP server 子进程并完成工具发现
+- 三层：路由（SSE 编码）→ `ChatService`（会话与持久化，CLI 共用）→ loop。详见 [docs/08](08-fastapi-sse.md)
 
 **会话持久化**：
 
-- Postgres + SQLAlchemy（async），两张表：`sessions`（id / title / created_at / updated_at）、`messages`（id / session_id / role / content / tool_calls / tool_results / created_at）
-- `tool_calls` 与 `tool_results` 存 JSON 列，这样重新加载历史时前端能复现工具调用过程，而不只是最终回答
+- Postgres + SQLAlchemy（async），两张表：`sessions`（id / title / created_at / updated_at）、`messages`（自增 id / session_id / role / content / tool_calls / tool_call_id / tool_name / is_error / data / created_at）
+- 消息存成「OpenAI 格式的超集」：发给 LLM 时只取 role / content / tool_calls / tool_call_id；`tool_name` / `is_error` / `data`（工具的结构化结果）只给前端，用来复现工具调用过程与地图打点。（2026-10-14 修订：原设计的 `tool_results` 列表字段与 loop 产出的消息形状不符）
+- 一轮对话整体入库（`append_messages`），出错的轮次不入库
 - 会话标题：首条用户消息截断即可，不额外调 LLM 生成
 - 建表用 `create_all` 启动时执行，demo 不引入 Alembic
 - 先定义 `SessionStore` 接口，Day 2 用内存实现让 loop 跑起来，Day 4 换 Postgres 实现——接口不变，前端与 loop 都不用动
@@ -147,10 +149,12 @@ Harness 需要覆盖的点：
 - `tool_result` 里的圣地坐标自动打点到地图，路线场景画出连线
 - 会话侧栏：列出历史会话，点击切换；刷新页面后从 `GET /sessions/{id}` 恢复，包括工具调用记录与地图打点
 
-### 4.6 可观测性 Langfuse
+### 4.6 可观测性 Langfuse ✅
 
-- 用 Langfuse Cloud 免费版，不自托管
-- Python SDK：`@observe()` 装饰 loop 与工具调用，LLM 调用走 `langfuse.openai` drop-in
+- 用 Langfuse Cloud 免费版（**JP 区域** `jp.cloud.langfuse.com`），不自托管
+- ~~`@observe()` + `langfuse.openai` drop-in~~ → **装饰器模式**：`TracedLLM` / `TracedTools` 包住 LLM 与工具，loop 一行不改。drop-in 依赖 `LANGFUSE_*` 环境变量，与我们的 pydantic-settings 配置方式不兼容。详见 [docs/09](09-langfuse.md)
+- trace 结构：`agent-turn`（agent，带 session_id）→ `llm`（generation，含 token 与首字时间）/ 工具名（tool）
+- Langfuse 不可达时请求不受影响（后台线程发送）；只在进程退出时 flush
 - Demo 价值：演示时打开 trace 页面，展示 agent 的完整决策链——这是「自建 harness」最直观的证明
 
 ### 4.7 Docker
@@ -184,7 +188,7 @@ Harness 需要覆盖的点：
 | Day | 主线 | 产出 | 验收 |
 |---|---|---|---|
 | **1** ✅ | 数据 + 三个 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；圣地/天气/路线三个 MCP server 全部跑通 | ✅ 5 部作品 22 个地标（坐标已用 Nominatim 校正）；天气、路线实测调通真实 API |
-| **2** 🚧 | Agent loop + 后端 | ✅ LLM 客户端、MCP 客户端、loop + harness（非流式）、system prompt、CLI；⏳ 流式、内存 SessionStore、FastAPI SSE、Langfuse | ✅ CLI 跑通三个场景与多轮对话；⏳ curl 流式、Langfuse trace |
+| **2** ✅ | Agent loop + 后端 | LLM 客户端（流式）、MCP 客户端、loop + harness、system prompt、内存 SessionStore、FastAPI SSE、Langfuse、CLI | ✅ curl 流式拿到带 3 次工具调用的回答（首字 0.8s）、多轮续聊正常；✅ Langfuse 里看到完整 trace 树 |
 | **3** | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | 三个核心场景在浏览器里全部跑通，能切换会话 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
 | **5** | AWS 部署 + 缓冲 | App Runner 上线；域名/HTTPS；**留半天修 bug** | 公网 URL 可访问，三个场景可演示 |
@@ -227,6 +231,7 @@ Aoki-Agent/
 │   ├── app/              FastAPI 入口、路由、SSE
 │   ├── agent/            自建 loop、harness、MCP client
 │   ├── store/            SessionStore 接口 + 内存 / Postgres 实现
+│   ├── cli.py            命令行入口（与 FastAPI 共用组件）
 │   └── mcp_servers/
 │       ├── seichi/       圣地巡礼 MCP server（本地数据）
 │       ├── weather/      天气 MCP server（Open-Meteo）

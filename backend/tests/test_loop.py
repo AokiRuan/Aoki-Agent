@@ -5,53 +5,10 @@ import asyncio
 import copy
 
 from backend.agent.harness import FORCE_FINAL_INSTRUCTION, Harness
-from backend.agent.llm import LLMResponse, ToolCall
+from backend.agent.llm import TextDelta, ToolCall
 from backend.agent.loop import AgentLoop
 from backend.agent.mcp_client import ToolOutcome
-
-SCHEMAS = [{"type": "function", "function": {"name": "search_anime", "parameters": {}}}]
-
-
-class FakeLLM:
-    """按顺序返回预先写好的回复；记录每次收到的请求。"""
-
-    def __init__(self, *script):
-        self.script = list(script)
-        self.requests = []
-
-    async def chat(self, messages, tools=None):
-        self.requests.append({"messages": copy.deepcopy(messages), "tools": tools})
-        step = self.script.pop(0)
-        if isinstance(step, Exception):
-            raise step
-        return step
-
-
-class FakeTools:
-    def __init__(self, handler=None):
-        self.calls = []
-        self.handler = handler or (lambda name, args: ToolOutcome(data={"ok": name}, is_error=False, text=f"{name} ok"))
-
-    def tool_schemas(self):
-        return SCHEMAS
-
-    async def call_tool(self, name, arguments):
-        self.calls.append((name, arguments))
-        result = self.handler(name, arguments)
-        return await result if asyncio.iscoroutine(result) else result
-
-
-def call(id, name="search_anime", **args):
-    import json
-    return ToolCall(id=id, name=name, arguments=args, raw_arguments=json.dumps(args))
-
-
-def answer(text):
-    return LLMResponse(content=text, finish_reason="stop")
-
-
-def with_tools(*calls, content=None):
-    return LLMResponse(content=content, tool_calls=list(calls), finish_reason="tool_calls")
+from backend.tests.fakes import SCHEMAS, FakeLLM, FakeTools, answer, call, tokens, types, with_tools
 
 
 async def run(loop, messages):
@@ -62,11 +19,14 @@ USER = [{"role": "system", "content": "sys"}, {"role": "user", "content": "莉�
 
 
 async def test_plain_answer_without_tools():
-    llm = FakeLLM(answer("你好"))
+    llm = FakeLLM(answer("你好，我是圣地巡礼助手"))
     events = await run(AgentLoop(llm, FakeTools(), Harness()), USER)
 
-    assert [e.type for e in events] == ["token", "done"]
-    assert events[-1].payload["new_messages"] == [{"role": "assistant", "content": "你好"}]
+    assert types(events) == ["token", "done"]
+    # 流式：文字分多个 token 事件到达，拼起来是完整回答
+    assert len([e for e in events if e.type == "token"]) > 1
+    assert tokens(events) == "你好，我是圣地巡礼助手"
+    assert events[-1].payload["new_messages"] == [{"role": "assistant", "content": "你好，我是圣地巡礼助手"}]
     assert llm.requests[0]["tools"] == SCHEMAS
 
 
@@ -75,10 +35,13 @@ async def test_one_tool_round_then_answer():
     tools = FakeTools()
     events = await run(AgentLoop(llm, tools, Harness()), USER)
 
-    assert [e.type for e in events] == ["token", "tool_call", "tool_result", "token", "done"]
+    assert types(events) == ["token", "tool_call", "tool_result", "token", "done"]
     assert tools.calls == [("search_anime", {"title": "莉可丽丝"})]
     # tool_call 与 tool_result 靠同一个 id 对应
-    assert events[1].tool_call_id == events[2].tool_call_id == "c1"
+    call_ev = next(e for e in events if e.type == "tool_call")
+    result_ev = next(e for e in events if e.type == "tool_result")
+    assert call_ev.tool_call_id == result_ev.tool_call_id == "c1"
+    assert tokens(events) == "我来查一下找到了"
 
     # 第二次问 LLM 时，历史里有：带 tool_calls 的 assistant 消息 + 对应 id 的 tool 消息
     second = llm.requests[1]["messages"]
@@ -169,6 +132,19 @@ async def test_llm_failure_yields_error_event():
 
     assert [e.type for e in events] == ["error"]
     assert "401" in events[0].message
+
+
+async def test_stream_breaking_midway_yields_partial_tokens_then_error():
+    class BrokenStreamLLM:
+        async def stream(self, messages, tools=None):
+            yield TextDelta("宇治的")
+            raise ConnectionError("连接被重置")
+
+    events = await run(AgentLoop(BrokenStreamLLM(), FakeTools(), Harness()), USER)
+
+    assert types(events) == ["token", "error"]
+    assert tokens(events) == "宇治的"
+    assert "ConnectionError" in events[-1].message
 
 
 async def test_input_messages_not_mutated_and_usage_summed():

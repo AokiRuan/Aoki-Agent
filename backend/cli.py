@@ -3,8 +3,8 @@
     python -m backend.cli "莉可丽丝的圣地在哪？"     # 单次提问
     python -m backend.cli                           # 交互模式，支持多轮对话，输入 exit 退出
 
-这个文件是「组装点」：它负责把 LLM、MCP 工具、harness 创建出来并注入 AgentLoop。
-Day 2 后半段的 FastAPI 做的是同一件事，只是把终端换成了 HTTP。
+和 FastAPI 共用同一套组件（backend/app/components.py）与同一个 ChatService，
+所以终端里看到的行为就是 HTTP 接口的行为，只是把 SSE 换成了打印。
 """
 from __future__ import annotations
 
@@ -14,39 +14,35 @@ import sys
 from typing import Any
 
 from backend.agent.events import AgentEvent
-from backend.agent.harness import Harness
-from backend.agent.llm import LLMClient
-from backend.agent.loop import AgentLoop
-from backend.agent.mcp_client import MCPClientPool
-from backend.agent.prompts import build_system_prompt
+from backend.app.chat_service import ChatService
+from backend.app.components import default_components
 from backend.app.config import settings
 
 
-async def ask(loop: AgentLoop, history: list[dict[str, Any]], question: str) -> None:
-    user_msg = {"role": "user", "content": question}
-    messages = [{"role": "system", "content": build_system_prompt()}, *history, user_msg]
+class Renderer:
+    """把事件流画到终端上。流式文字逐片打印，不换行。"""
 
-    async for event in loop.run(messages):
-        render(event)
-        if event.type == "done":
-            # system prompt 每次重新生成，不进历史；历史里只存对话本身
-            history.append(user_msg)
-            history.extend(event.payload["new_messages"])
+    def __init__(self) -> None:
+        self._mid_line = False
 
-
-def render(event: AgentEvent) -> None:
-    if event.type == "token":
-        print(event.content)
-    elif event.type == "tool_call":
-        args = json.dumps(event.payload, ensure_ascii=False)
-        print(f"  🔧 {event.tool_name}({args})")
-    elif event.type == "tool_result":
-        print(f"  {'❌' if event.payload['is_error'] else '✅'} {event.tool_name} → {summarize(event.payload['data'])}")
-    elif event.type == "done":
-        p = event.payload
-        print(f"  —— {p['iterations']} 轮 LLM 调用，{p['usage'].get('total_tokens', '?')} tokens")
-    elif event.type == "error":
-        print(f"  ⚠️ {event.message}")
+    def __call__(self, event: AgentEvent) -> None:
+        if event.type == "token":
+            print(event.content, end="", flush=True)
+            self._mid_line = True
+            return
+        if self._mid_line:  # 文字流结束、开始打印工具信息前先换行
+            print()
+            self._mid_line = False
+        if event.type == "tool_call":
+            print(f"  🔧 {event.tool_name}({json.dumps(event.payload, ensure_ascii=False)})")
+        elif event.type == "tool_result":
+            mark = "❌" if event.payload["is_error"] else "✅"
+            print(f"  {mark} {event.tool_name} → {summarize(event.payload['data'])}")
+        elif event.type == "done":
+            p = event.payload
+            print(f"  —— {p['iterations']} 轮 LLM 调用，{p['usage'].get('total_tokens', '?')} tokens")
+        elif event.type == "error":
+            print(f"  ⚠️ {event.message}")
 
 
 def summarize(data: Any) -> str:
@@ -54,19 +50,27 @@ def summarize(data: Any) -> str:
         return f"{len(data)} 条结果"
     if isinstance(data, dict) and "error" in data:
         return f"错误：{data['error']}"
-    text = json.dumps(data, ensure_ascii=False) if not isinstance(data, str) else data
+    text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
     return text if len(text) <= 80 else text[:80] + "…"
 
 
 async def main(argv: list[str]) -> None:
-    llm = LLMClient(settings.llm_model, settings.llm_api_key, settings.llm_base_url)
-    history: list[dict[str, Any]] = []
+    async with default_components(settings) as components:
+        service = ChatService(components)
+        session = None
 
-    # async with：保证三个 MCP 子进程在退出时（包括出错时）一定被关掉
-    async with MCPClientPool() as tools:
-        loop = AgentLoop(llm, tools, Harness(max_iterations=settings.max_iterations))
+        async def ask(question: str) -> None:
+            nonlocal session
+            # 第一轮新建会话，之后沿用：多轮对话的历史由 store 负责
+            session = session or await service.open_session(None, question)
+            render = Renderer()
+            async for event in service.run_turn(session, question):
+                render(event)
+            # 不在每轮后 flush：Langfuse 不可达时 flush 会阻塞约 5 秒（实测），
+            # 每轮都卡一下。退出时 default_components 会调用 shutdown()，那里会把缓冲的数据发完
+
         if argv:
-            await ask(loop, history, " ".join(argv))
+            await ask(" ".join(argv))
             return
         print("圣地巡礼助手（输入 exit 退出）")
         while True:
@@ -75,7 +79,7 @@ async def main(argv: list[str]) -> None:
             if question.lower() in ("exit", "quit"):
                 break
             if question:
-                await ask(loop, history, question)
+                await ask(question)
 
 
 if __name__ == "__main__":

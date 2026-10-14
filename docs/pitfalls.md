@@ -2,7 +2,7 @@
 
 开发过程中真实遇到的问题。每条按「现象 → 根因 → 解法 → 教训」记录。新坑追加在对应分类末尾。
 
-**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 行为与输出](#llm-行为与输出)
+**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 行为与输出](#llm-行为与输出) · [Web 与 HTTP](#web-与-http) · [可观测性](#可观测性)
 
 ---
 
@@ -40,6 +40,20 @@
 - **解法**：多于一行的代码，写成临时 `.py` 文件再执行
 - **教训**：`python -c` 只用来跑单行、不含双引号嵌套的代码
 
+### PowerShell 里的 `curl` 不是 curl
+
+- **现象**：照着网上教程写 `curl -N -X POST ...`，报参数错误或返回一个对象而不是原始文本
+- **根因**：PowerShell 5.1 里 `curl` 是 `Invoke-WebRequest` 的别名，参数完全不同
+- **解法**：写 `curl.exe`（Windows 10 起自带）。JSON 请求体写进文件用 `--data-binary "@req.json"`，避免命令行里的引号被 PowerShell 吃掉；显示中文前执行 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+- **详见**：[08 章 · 动手验证](08-fastapi-sse.md#动手验证)
+
+### `Out-File -Encoding ascii` 把中文变成问号，LLM 收到的是 `??`
+
+- **现象**：发"继续"给 agent，回答却是"抱歉，是我上一条回复太啰嗦了吗？"
+- **根因**：请求体用 `Out-File -Encoding ascii` 写的文件，ASCII 编码不了中文，"继续"被替换成了 `??`。LLM 实际收到的是两个问号，于是理解成用户表示疑惑
+- **解法**：用 `-Encoding utf8`（PowerShell 5.1 会写入 BOM，实测 FastAPI 能正常解析）
+- **教训**：**LLM 的回答莫名其妙时，先确认它收到的输入是不是你以为的那样**。这也是 trace 记录完整 input 的价值（[09 章](09-langfuse.md)）
+
 ---
 
 ## 依赖与包管理
@@ -50,6 +64,14 @@
 - **根因**：`.venv` 是 `uv` 创建的（`.venv/pyvenv.cfg` 里有 `uv = ...`），uv 创建的 venv 默认不装 pip
 - **解法**：用 `uv pip install ...`
 - **教训**：遇到陌生环境先看 `pyvenv.cfg`，弄清楚是谁建的
+
+### 换电脑/重装系统后 venv 失效，IDE 报「无法解析导入」
+
+- **现象**：VS Code 提示 `无法解析导入"openai"`；运行 `.venv\Scripts\python.exe` 报 `No Python at 'C:\Users\YUZI\anaconda3\python.exe'`
+- **根因**：venv 不是独立的 Python，它只是指向一个「基础解释器」（见 `.venv/pyvenv.cfg` 里的 `home =`）。原来的基础解释器在 anaconda 里，系统重装后 anaconda 不在了，venv 随之失效
+- **解法**：venv 是可重新生成的，直接重建：`uv venv --python 3.12 --clear .venv`（uv 会自动下载 Python 3.12），再 `uv pip install -r requirements.txt`。VS Code 里在 `.vscode/settings.json` 设置 `python.defaultInterpreterPath` 指向 `.venv`
+- **同一次重装还丢了 `.env.example`**：它从来没有被提交到 git，只存在于旧机器的磁盘上。后来发现时已经重新创建
+- **教训**：venv 不能拷贝、不能跨机器复用，也不进 git，只有 `requirements.txt` 是可靠的环境描述。**模板类文件（`.env.example`）一创建就要提交**，否则它和 `.env` 一样只活在本地。重建时依赖版本可能变化（这次 openai 从 3.6 升到了 3.30，测试仍全部通过）——这正是 [02 章](02-project-setup.md#设计取舍)提到的不钉版本的代价，Day 4 写 Dockerfile 时考虑生成锁文件
 
 ### pypi.org 连接超时
 
@@ -173,3 +195,71 @@ print(inspect.signature(MCPServer.tool))
 - **根因**：LLM 生成文本时抄写长数字不可靠
 - **解法**：不让它抄——前端地图用 `tool_result` 事件里的结构化数据打点，这条通道不经过 LLM；system prompt 里要求不要在回答里写经纬度
 - **教训**：**精确数据（坐标、价格、ID）走结构化通道，LLM 只负责自然语言**。详见 [05 章实测发现](05-agent-loop.md#实测发现)
+
+### 流式 tool_calls 的参数被切得很碎
+
+- **现象**：（探测发现，未出错）流式模式下工具参数 `{"lat": 34.99, "lng": ...}` 被切成 `{`、`"`、`lat`、`"`、`: `、`34`、`.`、`99`……，`"lng"` 甚至被切成 `"l"` + `"ng"`
+- **根因**：LLM 按 token 输出，参数 JSON 也是一个 token 一个 token 生成的
+- **解法**：按 `index` 累积拼接，**整轮流结束后才解析 JSON**；`id` 和 `name` 只在每个调用的第一片出现
+- **教训**：流式 tool_calls 在流结束前永远不是合法 JSON，别试图提前解析。详见 [05 章 · 流式](05-agent-loop.md#流式把分片拼回完整回复)
+
+### 流式模式下没有 token 用量
+
+- **现象**：（预防性发现）流式请求默认不返回 `usage`
+- **解法**：请求时加 `stream_options={"include_usage": True}`。另外 usage 的位置因服务商而异：DeepSeek 放在最后一片（和 `finish_reason` 一起），OpenAI 官方额外发一片 `choices` 为空的。两种都要处理
+
+---
+
+## Web 与 HTTP
+
+### SSE 里的中文被转义成 `上低`
+
+- **现象**：curl 看到的是 `"title": "上低音号..."`
+- **根因**：FastAPI 的 `ServerSentEvent(data=...)` 序列化 JSON 时默认转义非 ASCII 字符
+- **解法**：用 `raw_data=json.dumps(data, ensure_ascii=False)` 自己序列化。不加 `indent` 的 `json.dumps` 输出一定是单行，不会破坏 SSE 的行格式
+- **教训**：转义后前端照样能解析，但调试时没法读，体积也翻倍
+
+### 流式接口里没法返回 404
+
+- **现象**：（设计时发现）在 SSE 路由函数（生成器）里检查会话是否存在，不存在时 `raise HTTPException(404)`，客户端收到的却是 200
+- **根因**：FastAPI 先发出响应头（200）再开始执行生成器，发现问题时状态码已经发出去了
+- **解法**：把校验放进依赖（`Depends`），依赖在响应开始前执行
+- **教训**：**流式接口的所有校验都要在第一个字节发出之前完成**。详见 [08 章](08-fastapi-sse.md#为什么-404-必须在依赖里判断)
+
+### 发给客户端的错误，服务端没有记录
+
+- **现象**：第二轮对话收到 `error` 事件，去看 uvicorn 日志，什么都没有
+- **根因**：loop 把 LLM 失败转成了 `error` 事件发给客户端，这是对的，但没有任何地方记日志
+- **解法**：ChatService 收到 error 事件时 `logger.warning`
+- **教训**：把错误"优雅地"交给客户端时，别忘了服务端也要留一份记录，否则线上出问题无从排查
+
+---
+
+## 可观测性
+
+### Langfuse 报 401，key 明明是对的
+
+- **现象**：`Invalid credentials. Confirm that you've configured the correct host.`
+- **根因**：Langfuse Cloud 分区域部署（EU `cloud.langfuse.com` / US `us.cloud.langfuse.com` / JP `jp.cloud.langfuse.com`），key 只在创建项目的区域有效。`.env` 用的是默认的 EU 区域，项目建在 JP 区域
+- **解法**：`LANGFUSE_HOST` 改成项目所在区域。不确定时用同一对 key 依次请求各区域的 `/api/public/projects`，返回 200 的就是
+- **教训**：报错信息里"configured the correct host"那半句才是关键
+
+### `langfuse.openai` drop-in 客户端不生效
+
+- **现象**：（探测发现）显式创建 `Langfuse(public_key=..., ...)` 后，`get_client() is lf` 为 False
+- **根因**：drop-in 客户端通过 `get_client()` 找 Langfuse 实例，而它读的是 `LANGFUSE_*` 环境变量。我们的配置来自 `.env` + pydantic-settings，不在 `os.environ` 里
+- **解法**：不用 drop-in，改用装饰器（`TracedLLM` / `TracedTools`）显式传入客户端
+- **详见**：[09 章 · 实测发现](09-langfuse.md#2-drop-in-客户端找不到我们的配置)
+
+### Langfuse 不可达时 flush() 阻塞 5 秒
+
+- **现象**：（实测）对不可达的地址调用 `flush()`，阻塞约 5 秒才返回
+- **根因**：flush 要等数据发送完成或超时
+- **解法**：不在每次请求后 flush，只在进程退出时 `shutdown()` 一次。平时由后台线程批量发送，不阻塞请求
+
+### 查 trace 的接口：429、410、ApiError
+
+- **现象**：验证脚本轮询 `api.trace.get()`，一直报 `ApiError`
+- **根因**：单 trace 查询接口免费版限 5 次/分钟，超了返回 429，SDK 把它包成了笼统的 `ApiError`；列出 trace 的 `GET /api/public/traces` 已经下线（410 Gone）
+- **解法**：用 `GET /api/public/v2/observations?traceId=...&fromStartTime=...&toStartTime=...`，需要 token 用量等字段时加 `fields=core,basic,usage,model,metrics,io,metadata`
+- **教训**：SDK 抛出笼统的错误时，直接用 HTTP 请求一次看响应体，原因往往写得很清楚
