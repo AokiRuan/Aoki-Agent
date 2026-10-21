@@ -1,4 +1,5 @@
-"""POST /chat —— SSE 流式端点。讲解见 docs/08-fastapi-sse.md。
+"""POST /api/chat —— SSE 流式端点。讲解见 docs/08-fastapi-sse.md。
+路由本身不带 /api 前缀，由 main.py 在 include_router 时统一加上。
 
 线上格式（每个事件之间空一行）：
 

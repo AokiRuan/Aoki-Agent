@@ -1,7 +1,7 @@
 """会话读取接口。讲解见 docs/08-fastapi-sse.md。
 
-GET /sessions        —— 列表（按最近更新倒序），供前端侧栏渲染
-GET /sessions/{id}   —— 完整消息，供刷新页面后恢复，包含工具调用记录与地图打点数据
+GET /api/sessions        —— 列表（按最近更新倒序），供前端侧栏渲染
+GET /api/sessions/{id}   —— 完整消息，供刷新页面后恢复，包含工具调用记录与地图打点数据
 """
 from fastapi import APIRouter, Depends, HTTPException
 

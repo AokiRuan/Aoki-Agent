@@ -10,7 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .chat_service import ChatService
 from .components import Components, default_components
@@ -18,6 +21,9 @@ from .config import settings
 from .routes import chat, sessions
 
 ComponentsFactory = Callable[[], AbstractAsyncContextManager[Components]]
+
+# npm run build 的产物。讲解见 docs/10-frontend.md
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 def create_app(components_factory: ComponentsFactory | None = None) -> FastAPI:
@@ -32,14 +38,19 @@ def create_app(components_factory: ComponentsFactory | None = None) -> FastAPI:
             yield
 
     app = FastAPI(title="Seichi-junrei Agent", lifespan=lifespan)
-    app.include_router(chat.router)
-    app.include_router(sessions.router)
+    # 业务接口统一挂在 /api 下，根路径 / 留给前端页面。
+    # 开发时 Vite 只需代理 /api 一条规则；部署时一个容器同时出页面和接口，同源、无需 CORS
+    app.include_router(chat.router, prefix="/api")
+    app.include_router(sessions.router, prefix="/api")
 
     @app.get("/health")
     async def health():
         return {"status": "ok"}
 
-    # TODO(Day 3)：挂载 frontend/dist 静态文件，SPA fallback 到 index.html
+    # 必须最后挂：mount("/") 会接住所有没被上面路由匹配的路径。
+    # 没有构建产物（只跑后端、跑测试）时跳过，不影响接口
+    if FRONTEND_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app
 
 
