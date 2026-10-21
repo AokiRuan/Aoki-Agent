@@ -106,11 +106,12 @@ class AgentLoop:
             # zip() 会把两个序列中相同位置的元素配对
             for tc, outcome in zip(resp.tool_calls, outcomes):
                 history.append({"role": "tool", "tool_call_id": tc.id, "content": outcome.text})
+                payload: dict[str, Any] = {"is_error": outcome.is_error, "data": outcome.data}
+                if outcome.is_error:
+                    # 出错时 data 为空，把给 LLM 看的错误说明也给前端，界面上才能显示失败原因
+                    payload["error"] = outcome.text
                 yield AgentEvent(
-                    type="tool_result",
-                    tool_name=tc.name,
-                    tool_call_id=tc.id,
-                    payload={"is_error": outcome.is_error, "data": outcome.data},
+                    type="tool_result", tool_name=tc.name, tool_call_id=tc.id, payload=payload
                 )
 
     async def _execute(self, tc: ToolCall, seen_calls: Counter[str]) -> ToolOutcome:

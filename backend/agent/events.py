@@ -24,5 +24,5 @@ class AgentEvent(BaseModel):
     message: Optional[str] = None
     # 各事件 payload 的内容：
     #   tool_call   → LLM 给出的参数
-    #   tool_result → {"is_error": bool, "data": 工具的结构化结果}
+    #   tool_result → {"is_error": bool, "data": 工具的结构化结果}，出错时另有 "error": 错误说明
     #   done        → {"new_messages": [...], "iterations": int, "usage": {...}}

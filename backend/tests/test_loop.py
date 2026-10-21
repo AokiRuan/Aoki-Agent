@@ -81,6 +81,7 @@ async def test_tool_error_is_handed_back_to_llm():
     events = await run(AgentLoop(llm, FakeTools(handler), Harness()), USER)
 
     assert events[1].type == "tool_result" and events[1].payload["is_error"] is True
+    assert events[1].payload["error"] == "服务不可用"  # 前端靠它显示失败原因
     assert llm.requests[1]["messages"][-1]["content"] == "服务不可用"
     assert events[-1].type == "done"
 
