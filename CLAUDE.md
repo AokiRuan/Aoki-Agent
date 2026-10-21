@@ -25,9 +25,12 @@
 - Windows 终端需 `$env:PYTHONIOENCODING = "utf-8"`，否则打印 emoji 崩溃
 - 测试：`python -m pytest`（配置见 pytest.ini，`asyncio_mode = auto`；打真实外部 API 的测试标记为 `network`，默认不跑）
 - 命令行和 agent 对话：`python -m backend.cli "问题"`（会消耗 LLM token）；列出全部工具：`python -m backend.agent.mcp_client`
-- 启动：`uvicorn backend.app.main:app --reload`；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
+- 启动：`uvicorn backend.app.main:app --reload`；接口都在 `/api` 下（`/api/chat`、`/api/sessions`），`/health` 在根路径；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
 - 测试替身在 `backend/tests/fakes.py`；`conftest.py` 清空了 Langfuse key，测试永不往线上写数据
 - Langfuse 项目在 **JP 区域**（`jp.cloud.langfuse.com`）；按 trace 读数据用 `GET /api/public/v2/observations`（旧的 traces 列表接口已 410，单 trace 接口限 5 次/分钟）
+- 前端（`frontend/`，讲解见 docs/10-frontend.md）：Node 是免安装版，在 `%LOCALAPPDATA%\Programs\node-v24.22.1-win-x64`（已加入用户 PATH，新开的终端才生效；旧终端里先 `$env:Path = "$env:LOCALAPPDATA\Programs\node-v24.22.1-win-x64;$env:Path"`）。npm 已配国内镜像。在 `frontend/` 下：`npm test`（vitest）、`npm run lint`（oxlint）、`npm run build`（含 `tsc -b` 类型检查——vitest 不查类型）、`npm run dev`
+- 开发时访问 `http://localhost:5173`（不是 127.0.0.1——Vite 监听的是 IPv6 的 ::1），Vite 把 `/api` 代理到 8000；`npm run build` 后 FastAPI 直接在 8000 提供页面
+- 看页面效果可以用无头 Edge 截图（`msedge --headless=new --screenshot=... --virtual-time-budget=15000 URL`）；窗口最小宽度约 500px，窄屏截图用 600px 宽
 - `MCPClientPool` 必须在同一个 asyncio task 里打开和关闭（用 `async with`），不要用 pytest 的 async yield fixture 管理它
 
 ## 架构约束
@@ -38,6 +41,7 @@
 - 追踪用装饰器（`TracedLLM` / `TracedTools`）包住 LLM 与工具，不往 loop 里写 Langfuse 代码
 - 会变的东西先立接口（`SessionStore`、`LLMClient`、`SeichiRepository`）
 - 工具错误作为数据返回给 LLM，不抛异常中断对话
+- 前端：逻辑写成纯函数（`chat/model.ts`、`map/extract.ts`、`api/sse.ts`）并配单元测试，组件只渲染；地图只用工具返回的结构化 `data`，不解析 LLM 的文字；地图等派生数据从对话 `items` 推导，不单独存状态
 
 ## MCP SDK 2.x
 

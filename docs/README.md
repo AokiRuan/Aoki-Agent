@@ -16,7 +16,7 @@
 | 07 | [MCP Client](07-mcp-client.md) | 多 server 聚合、子进程环境变量、三种调用结局、同一 task 的生命周期约束 | ✅ |
 | 08 | [FastAPI 与 SSE](08-fastapi-sse.md) | SSE 协议、lifespan 与应用工厂、三层分工、流式接口的校验时机、会话存储格式、接口测试 | ✅ |
 | 09 | [可观测性：Langfuse](09-langfuse.md) | trace 的结构、装饰器模式接入、Langfuse 不可达时的行为、读懂一个真实 trace | ✅ |
-| 10 | React 前端 | SSE 消费、工具过程可视化、地图联动 | ⏳ Day 3 |
+| 10 | [React 前端](10-frontend.md) | 手写 SSE 解析、两条路径一个模型、工具过程可视化、地图只认结构化数据、开发代理与同源部署 | ✅ |
 | 11 | 会话持久化 | SQLAlchemy async、从内存切到 Postgres（接口与内存实现见 08 章） | ⏳ Day 4 |
 | 12 | Docker | 多阶段构建、compose | ⏳ Day 4 |
 | 13 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |

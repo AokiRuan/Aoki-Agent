@@ -18,9 +18,9 @@
 
 ```
 ┌──────────────────────────────┐
-│   React                      │  frontend/                                 ⏳
+│   React                      │  frontend/                                 ✅
 └──────────────┬───────────────┘
-               │ POST /chat  ←→  SSE 事件流
+               │ POST /api/chat  ←→  SSE 事件流
 ┌──────────────▼───────────────┐
 │   app/  FastAPI              │  路由、SSE 编码、生命周期、ChatService      ✅
 └──────┬───────────────┬───────┘
@@ -49,18 +49,19 @@
 
 | # | 发生了什么 | 负责模块 | 状态 |
 |---|---|---|---|
-| 1 | 前端 `POST /chat`，带上 `session_id` 和用户消息 | frontend | ⏳ |
+| 1 | 前端 `POST /api/chat`，带上 `session_id` 和用户消息 | [frontend/src/api/client.ts](../frontend/src/api/client.ts) | ✅ |
 | 2 | ChatService 从 store 读出这个会话的历史消息，加上 system prompt 和本轮用户消息 | [app/chat_service.py](../backend/app/chat_service.py) · [store/](../backend/store/) | ✅ |
 | 3 | 调 `AgentLoop.run(messages)`，拿到一个事件流 | [agent/loop.py](../backend/agent/loop.py) | ✅ |
 | 4 | loop 把历史 + **所有 MCP 工具的 schema** 一起发给 LLM | [agent/llm.py](../backend/agent/llm.py) · [agent/mcp_client.py](../backend/agent/mcp_client.py) | ✅ |
 | 5 | LLM 回复 `tool_calls: search_anime(title="莉可丽丝")` | LLM | — |
-| 6 | loop yield 一个 `tool_call` 事件 → 前端显示「正在查询作品…」 | [agent/events.py](../backend/agent/events.py) | ✅ |
+| 6 | loop yield 一个 `tool_call` 事件 → 前端显示「正在查询作品…」 | [agent/events.py](../backend/agent/events.py) · [frontend/src/chat/model.ts](../frontend/src/chat/model.ts) | ✅ |
 | 7 | mcp_client 把调用经 stdin 发给 seichi 子进程，从 stdout 读回结果 | [agent/mcp_client.py](../backend/agent/mcp_client.py) | ✅ |
 | 8 | seichi server 查数据，返回 `anime_id: 364450` | [mcp_servers/seichi/](../backend/mcp_servers/seichi/) | ✅ |
 | 9 | loop yield `tool_result`，把结果追加进 messages，**回到第 4 步** | loop | ✅ |
 | 10 | 第二轮：LLM 看到 anime_id，决定调 `list_spots(364450)`，重复 5~9 | — | — |
 | 11 | 第三轮：LLM 拿到 5 个地标，不再调工具，开始输出文字 → 一串 `token` 事件，逐字流式 | loop | ✅ |
 | 12 | `done` 事件；ChatService 把本轮消息（含工具调用记录与结构化结果）写回 store，路由把事件编码成 SSE | chat_service.py · routes/chat.py | ✅ |
+| 13 | 前端把 `tool_result` 里的坐标画到地图上；刷新页面时从 `GET /api/sessions/{id}` 恢复同样的界面 | [frontend/src/map/extract.ts](../frontend/src/map/extract.ts) | ✅ |
 
 贯穿全程：每一轮 LLM 调用、每一次工具调用都被 Langfuse 记录成 trace（[agent/tracing.py](../backend/agent/tracing.py)，✅）。
 

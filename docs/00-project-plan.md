@@ -28,7 +28,7 @@
 └──────────────┬───────────────┘
                │ SSE
 ┌──────────────▼───────────────┐
-│   FastAPI                    │  /chat 流式端点 · 会话管理 ──▶ Postgres
+│   FastAPI                    │  /api/chat 流式端点 · 会话管理 ──▶ Postgres
 ├──────────────────────────────┤
 │   Agent Loop + Harness (自建) │  ← 本项目核心
 │   · LLM 调用 / tool_calls 解析 │
@@ -125,10 +125,10 @@ Harness 需要覆盖的点：
 
 ### 4.4 后端 FastAPI ✅（Postgres 待 Day 4）
 
-- `POST /chat` — SSE 流式（FastAPI 内置 `EventSourceResponse`），事件类型：`session` / `token` / `tool_call` / `tool_result` / `done` / `error`；带 `session_id`，不传则新建，不存在返回 404
-- `GET /sessions` — 会话列表（id、标题、更新时间）
-- `GET /sessions/{id}` — 拉取该会话的完整消息，用于刷新页面后恢复
-- 托管 React 构建产物，单容器对外（⏳ Day 3）
+- `POST /api/chat` — SSE 流式（FastAPI 内置 `EventSourceResponse`），事件类型：`session` / `token` / `tool_call` / `tool_result` / `done` / `error`；带 `session_id`，不传则新建，不存在返回 404
+- `GET /api/sessions` — 会话列表（id、标题、更新时间）
+- `GET /api/sessions/{id}` — 拉取该会话的完整消息，用于刷新页面后恢复
+- 托管 React 构建产物（`frontend/dist` 挂在 `/`），单容器对外。接口统一加 `/api` 前缀，`/health` 留在根路径给健康检查（2026-10-21）
 - 启动时拉起 MCP server 子进程并完成工具发现
 - 三层：路由（SSE 编码）→ `ChatService`（会话与持久化，CLI 共用）→ loop。详见 [docs/08](08-fastapi-sse.md)
 
@@ -141,13 +141,14 @@ Harness 需要覆盖的点：
 - 建表用 `create_all` 启动时执行，demo 不引入 Alembic
 - 先定义 `SessionStore` 接口，Day 2 用内存实现让 loop 跑起来，Day 4 换 Postgres 实现——接口不变，前端与 loop 都不用动
 
-### 4.5 前端 React
+### 4.5 前端 React ✅
 
 - Vite + React + TypeScript
 - **双面板**：左侧聊天，右侧地图（Leaflet + OpenStreetMap，免费无 key）
 - SSE 消费，**工具调用过程可视化**——用户能看到「正在查询圣地…」「正在获取天气…」，这是 agent demo 的核心观感
 - `tool_result` 里的圣地坐标自动打点到地图，路线场景画出连线
-- 会话侧栏：列出历史会话，点击切换；刷新页面后从 `GET /sessions/{id}` 恢复，包括工具调用记录与地图打点
+- 会话侧栏：列出历史会话，点击切换；刷新页面后从 `GET /api/sessions/{id}` 恢复，包括工具调用记录与地图打点
+- 实现要点（详见 [docs/10](10-frontend.md)）：fetch + 手写 SSE 解析（EventSource 不支持 POST）；实时事件与存储消息走两个纯函数、产出同一个界面模型；地图数据从对话派生、只用工具的结构化结果；路线是站点间直线示意（`plan_route` 不返回道路几何）
 
 ### 4.6 可观测性 Langfuse ✅
 
@@ -189,7 +190,7 @@ Harness 需要覆盖的点：
 |---|---|---|---|
 | **1** ✅ | 数据 + 三个 MCP | ~~验证数据源~~ → Anitabi 不可用，已切 mock；圣地/天气/路线三个 MCP server 全部跑通 | ✅ 5 部作品 22 个地标（坐标已用 Nominatim 校正）；天气、路线实测调通真实 API |
 | **2** ✅ | Agent loop + 后端 | LLM 客户端（流式）、MCP 客户端、loop + harness、system prompt、内存 SessionStore、FastAPI SSE、Langfuse、CLI | ✅ curl 流式拿到带 3 次工具调用的回答（首字 0.8s）、多轮续聊正常；✅ Langfuse 里看到完整 trace 树 |
-| **3** | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | 三个核心场景在浏览器里全部跑通，能切换会话 |
+| **3** ✅ | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | ✅ 无头浏览器实测：点击提问后流式输出、并行工具转圈、地图打点与路线；刷新后原样恢复；侧栏切换会话。前端 17 个单元测试 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
 | **5** | AWS 部署 + 缓冲 | App Runner 上线；域名/HTTPS；**留半天修 bug** | 公网 URL 可访问，三个场景可演示 |
 

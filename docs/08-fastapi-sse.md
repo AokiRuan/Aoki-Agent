@@ -83,8 +83,8 @@ app/
 ├── deps.py           FastAPI 依赖：get_service、resolve_chat_session
 ├── schemas.py        请求 / 响应模型
 └── routes/
-    ├── chat.py       POST /chat（SSE）
-    └── sessions.py   GET /sessions、GET /sessions/{id}
+    ├── chat.py       POST /api/chat（SSE）
+    └── sessions.py   GET /api/sessions、GET /api/sessions/{id}
 store/
 ├── base.py           SessionStore 接口、StoredMessage
 └── memory.py         内存实现
@@ -104,11 +104,17 @@ def create_app(components_factory=None) -> FastAPI:
         # 离开 async with：关闭 MCP 子进程、上报剩余 trace
 
     app = FastAPI(lifespan=lifespan)
+    app.include_router(chat.router, prefix="/api")
+    app.include_router(sessions.router, prefix="/api")
     ...
+    if FRONTEND_DIST.is_dir():                   # 有前端构建产物就一起托管（Day 3 加入）
+        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app
 
 app = create_app()
 ```
+
+接口统一挂在 `/api` 下，根路径 `/` 留给前端页面；`/health` 留在根路径给部署平台的健康检查。为什么这样分、`mount` 为什么必须最后写，见 [10 章「后端配合的改动」](10-frontend.md#后端配合的改动)。路由文件里写的仍是 `@router.post("/chat")`，前缀在 `include_router` 时统一加上——路由不需要知道自己被挂在哪。
 
 **lifespan** 是 FastAPI 管理"应用级资源"的地方：`yield` 之前的代码在服务启动时执行一次，`yield` 之后的代码在服务关闭时执行一次。MCP 子进程、数据库连接池这类**整个应用共用、要正确关闭**的资源都应该放在这里。
 
@@ -150,7 +156,7 @@ async def list_sessions(service: ChatService = Depends(get_service)): ...
 
 ### 为什么 404 必须在依赖里判断
 
-`POST /chat` 带了一个不存在的 `session_id`，应该返回 404。直觉上写在路由函数里：
+`POST /api/chat` 带了一个不存在的 `session_id`，应该返回 404。直觉上写在路由函数里：
 
 ```python
 # ❌ 反例
@@ -261,7 +267,7 @@ class StoredMessage(BaseModel):
 
 ## 实测
 
-用 uvicorn 起服务、curl 发请求，三个场景合在一个问题里：
+用 uvicorn 起服务、curl 发请求，三个场景合在一个问题里（Day 2 实测，当时接口还没有 `/api` 前缀）：
 
 ```
 POST /chat  {"message": "上低音号在宇治的圣地有哪些？这周六去那边天气怎么样？"}
@@ -325,10 +331,10 @@ uvicorn backend.app.main:app --reload
 #    JSON 写在文件里，避免 PowerShell 把命令行里的引号吃掉
 '{"message": "宇治这周六天气怎么样"}' | Out-File -Encoding utf8 req.json
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-curl.exe -N -X POST http://127.0.0.1:8000/chat -H "Content-Type: application/json" --data-binary "@req.json"
+curl.exe -N -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@req.json"
 
 # 3. 查看会话
-curl.exe http://127.0.0.1:8000/sessions
+curl.exe http://127.0.0.1:8000/api/sessions
 
 # 4. 接口测试（不花 token）
 python -m pytest -v backend/tests/test_api.py backend/tests/test_store.py

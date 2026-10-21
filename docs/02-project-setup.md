@@ -20,7 +20,7 @@ Aoki-Agent/
 │   │   ├── chat_service.py     一轮对话：载入历史 → 运行 agent → 入库
 │   │   ├── deps.py · schemas.py  FastAPI 依赖、请求/响应模型
 │   │   ├── config.py           所有配置，从环境变量读
-│   │   └── routes/             /chat（SSE）与 /sessions
+│   │   └── routes/             /api/chat（SSE）与 /api/sessions
 │   ├── agent/                核心：自建 loop、harness、LLM 与 MCP 客户端（见 05~07 章）
 │   ├── cli.py                命令行入口，不经 HTTP 直接和 agent 对话（见 05 章）
 │   ├── store/                会话持久化：接口 + 内存/Postgres 两种实现
@@ -29,7 +29,10 @@ Aoki-Agent/
 │   │   ├── weather/            天气，调 Open-Meteo（见 04 章）
 │   │   └── route/              路线与地理编码，调 OSRM + Nominatim（见 04 章）
 │   └── tests/                pytest 测试
-├── frontend/                 React（待初始化，需先装 Node）
+├── frontend/                 React + Vite + TypeScript（见 10 章）
+│   ├── src/                    api/（SSE 与接口）· chat/（对话模型）· map/ · components/
+│   ├── package.json            前端依赖与 npm 脚本；package-lock.json 锁定精确版本
+│   └── dist/                   npm run build 的产物，由 FastAPI 托管（被 .gitignore 排除）
 ├── evals/                    评测（Day 6+）
 ├── docs/                     本学习手册
 ├── learn/                    学习期代码，只读参考
@@ -142,6 +145,7 @@ uvicorn backend.app.main:app --reload
 - `backend.app.main:app` 的意思是：模块 `backend.app.main` 里的变量 `app`
 - `--reload`：改代码自动重启，只在开发时用
 - 启动后访问 http://127.0.0.1:8000/docs —— FastAPI 根据路由**自动生成的交互式 API 文档**，可以直接在页面上发请求测试
+- 如果已经执行过 `npm run build`（`frontend/dist` 存在），http://127.0.0.1:8000 就是前端页面。开发前端时的两终端启动方式见 [10 章](10-frontend.md#动手验证)
 
 ### 跑测试
 
@@ -169,6 +173,7 @@ python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 当前的测试：
 
 - [test_app.py](../backend/tests/test_app.py) —— 应用能起来、`/health` 正常
+- 前端的单元测试用 vitest，在 `frontend/` 下 `npm test`（见 10 章）
 - [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server，包括一个**真实 stdio 子进程往返**的测试（见 03 章）
 - [test_weather.py](../backend/tests/test_weather.py) · [test_route.py](../backend/tests/test_route.py) —— 天气与路线 MCP server，用 MockTransport 模拟外部服务（见 04 章）
 - [test_llm.py](../backend/tests/test_llm.py) —— LLM 客户端对响应的解析、system prompt 的日期（见 05 章）

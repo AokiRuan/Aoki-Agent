@@ -2,7 +2,7 @@
 
 开发过程中真实遇到的问题。每条按「现象 → 根因 → 解法 → 教训」记录。新坑追加在对应分类末尾。
 
-**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 行为与输出](#llm-行为与输出) · [Web 与 HTTP](#web-与-http) · [可观测性](#可观测性)
+**目录**：[Python 导入与运行](#python-导入与运行) · [Windows 环境](#windows-环境) · [依赖与包管理](#依赖与包管理) · [MCP SDK 2.x](#mcp-sdk-2x) · [第三方 API](#第三方-api) · [LLM 行为与输出](#llm-行为与输出) · [Web 与 HTTP](#web-与-http) · [可观测性](#可观测性) · [前端](#前端)
 
 ---
 
@@ -263,3 +263,54 @@ print(inspect.signature(MCPServer.tool))
 - **根因**：单 trace 查询接口免费版限 5 次/分钟，超了返回 429，SDK 把它包成了笼统的 `ApiError`；列出 trace 的 `GET /api/public/traces` 已经下线（410 Gone）
 - **解法**：用 `GET /api/public/v2/observations?traceId=...&fromStartTime=...&toStartTime=...`，需要 token 用量等字段时加 `fields=core,basic,usage,model,metrics,io,metadata`
 - **教训**：SDK 抛出笼统的错误时，直接用 HTTP 请求一次看响应体，原因往往写得很清楚
+
+## 前端
+
+### Leaflet 圆点的 className 不生效，显示成默认的蓝色空心圈
+
+- **现象**：`<CircleMarker pathOptions={{ className: 'spot-marker' }}>` 配合 CSS `.spot-marker { fill: ... }`，截图里圆点仍是 Leaflet 默认的蓝色空心圈，CSS 完全没起作用
+- **根因**：读 react-leaflet 源码（`@react-leaflet/core/lib/path.js`）：`pathOptions` 是在元素创建**之后**通过 `instance.setStyle(options)` 应用的。而 Leaflet 只在创建 SVG 元素时（`_initPath`）读 `className`，`setStyle` 不会再加类名
+- **解法**：颜色直接写进 `pathOptions`（`color` / `fillColor` / `fillOpacity` / `weight`），并放在模块级常量里——react-leaflet 按**引用**比较 `pathOptions`，每次渲染传新的对象字面量会导致每次都调 `setStyle`
+- **教训**：包装库（react-leaflet）的 prop 不一定原样传给底层库（Leaflet）的构造参数。样式不生效时去看包装层怎么应用这个 prop
+
+### Leaflet 默认 Marker 图标经过打包后显示成破图
+
+- **现象**：这是 Leaflet + 打包工具的知名问题，本项目**预先规避、未实际触发**：默认 `Marker` 的图标图片路径是 Leaflet 的 CSS 里写的相对路径，经过 Vite / webpack 打包后路径对不上
+- **解法**：不用默认图标。圣地用 `CircleMarker`（SVG 矢量圆，不需要图片），路线站点用 `L.divIcon`（一段 HTML，可以用 CSS 写样式、显示编号）
+- **教训**：用到"库自带的静态资源"时，先想想打包后它还找不找得到
+
+### `curl http://127.0.0.1:5173` 没有响应，`localhost:5173` 却可以
+
+- **现象**：Vite 开发服务器启动后，`curl http://127.0.0.1:5173/` 返回空，`curl http://localhost:5173/` 正常
+- **根因**：Vite 默认只监听 `localhost`，在这台 Windows 上解析成了 IPv6 的 `::1`，没有监听 IPv4 的 `127.0.0.1`。uvicorn 则相反，默认监听 `127.0.0.1`
+- **解法**：开发时用 `http://localhost:5173` 访问。Vite 代理的目标写 `http://127.0.0.1:8000`（明确走 IPv4，对上 uvicorn）
+- **教训**：`localhost` 和 `127.0.0.1` 不是一回事——前者是名字，可能解析成 IPv6
+
+### Markdown 表格显示成一堆竖线
+
+- **现象**：LLM 回答里的表格在页面上显示成 `| 圣地 | 出现集数 | ... |---|---|` 这样的原文
+- **根因**：表格不属于标准 Markdown（CommonMark），是 GitHub 的扩展语法（GFM）。`react-markdown` 默认只支持 CommonMark
+- **解法**：`npm install remark-gfm`，`<Markdown remarkPlugins={[remarkGfm]}>`
+- **教训**：LLM 输出的"Markdown"通常是 GFM（表格、删除线、任务列表），渲染器要按 GFM 配
+
+### TypeScript 6：`TextDecoderStream` 不能接在 `ReadableStream<Uint8Array>` 后面
+
+- **现象**：`npm run build` 报 `Argument of type 'TextDecoderStream' is not assignable to parameter of type 'ReadableWritablePair<string, Uint8Array<ArrayBufferLike>>'`，而 vitest 照常通过
+- **根因**：新版 TypeScript 的 DOM 类型里 `Uint8Array` 带了泛型参数（`Uint8Array<ArrayBuffer>` vs `Uint8Array<ArrayBufferLike>`，后者包含 `SharedArrayBuffer`）。`fetch` 的 `res.body` 是 `ReadableStream<Uint8Array<ArrayBuffer>>`，写成不带泛型的 `ReadableStream<Uint8Array>` 就变宽了，接不上 `TextDecoderStream`。vitest 只转译、不做类型检查，所以测试能过
+- **解法**：参数类型写 `ReadableStream<Uint8Array<ArrayBuffer>>`
+- **教训**：vitest / Vite 开发模式都不做类型检查（只删掉类型），类型错误要靠 `tsc`（`npm run build` 里的 `tsc -b`）发现
+
+### 装好 Node 后，VS Code 终端里仍然找不到 npm
+
+- **现象**：Node 已加入用户 PATH，在 VS Code 里新开终端执行 `npm run build`，报「无法将"npm"项识别为 cmdlet…」
+- **根因**：进程的环境变量是在**启动时**从父进程复制来的。VS Code 的集成终端继承的是 VS Code 进程的环境，而 VS Code 是在修改 PATH 之前启动的——新开终端标签页拿到的仍是旧 PATH
+- **解法**：彻底退出 VS Code（所有窗口）再打开。临时办法是在当前终端里补上：`$env:Path = "$env:LOCALAPPDATA\Programs\node-v24.22.1-win-x64;$env:Path"`
+- **教训**：改了系统 / 用户环境变量后，"重开终端"要重开到最顶层的那个程序
+
+### 无头浏览器截图：窗口设 400px 宽，页面却按 492px 排版
+
+- **现象**：用 `msedge --headless=new --window-size=400,860 --screenshot` 检查窄屏布局，截图右侧文字被截断，看起来像页面横向溢出
+- **根因**：浏览器窗口有最小宽度。用 `--dump-dom` 打印 `innerWidth` 实测是 **492**，页面按 492px 排版，截图却只截了 400px
+- **解法**：窄屏截图用 600px 宽（仍低于 900px 的窄屏断点），或先打印 `innerWidth` 确认
+- **教训**：验证工具本身也可能有偏差。看到异常先确认测量是否可信，再改代码
+
