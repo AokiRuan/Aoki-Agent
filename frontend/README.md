@@ -1,24 +1,13 @@
 # frontend
 
-React + Vite + TypeScript。**尚未初始化**——本机没有装 Node。
+React + Vite + TypeScript。讲解见 [docs/10-frontend.md](../docs/10-frontend.md)。
 
-装好 Node 后在项目根目录执行：
-
-```bash
-npm create vite@latest frontend -- --template react-ts
-cd frontend
+```powershell
 npm install
-npm install leaflet react-leaflet
+npm test          # 单元测试（vitest）
+npm run lint      # oxlint
+npm run dev       # 开发服务器 http://localhost:5173 ，/api 代理到后端 :8000
+npm run build     # 产物在 dist/，由 FastAPI 在 http://127.0.0.1:8000 托管
 ```
 
-（`npm create vite` 会拒绝写入非空目录，先把这个 README 挪走或直接让它覆盖后再放回。）
-
-## 结构规划
-
-- **双面板**：左侧聊天，右侧地图（Leaflet + OpenStreetMap，免费无 key）
-- **SSE 消费**：`POST /chat` 的事件流，按 `token` / `tool_call` / `tool_result` / `done` / `error` 分别处理
-- **工具调用可视化**：展示「正在查询圣地…」「正在获取天气…」，这是 agent demo 的核心观感
-- **地图联动**：`tool_result` 里的坐标自动打点，路线场景画连线
-- **会话侧栏**：`GET /sessions` 列表，点击切换；刷新后 `GET /sessions/{id}` 恢复，含工具调用记录与打点
-
-构建产物 `dist/` 由 FastAPI 托管，单容器对外。
+开发时需要另开一个终端在项目根目录启动后端：`uvicorn backend.app.main:app --reload`。
