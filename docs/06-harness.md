@@ -106,6 +106,20 @@ def argument_error_message(name, error) -> str:
 
 同时，写回历史的是 LLM 给出的**原文**参数（`raw_arguments`），这样 LLM 下一轮能看到自己写错了什么。
 
+> **Python 知识点：`@staticmethod`**
+>
+> 源码里 `call_key` 和 `argument_error_message` 上面有 `@staticmethod`，表示这个方法**不接收 `self`**——它不读也不改实例状态，只是逻辑上属于这个类的普通函数。三种方法对比：
+>
+> | 写法 | 第一个参数 | 能访问 | 本项目例子 |
+> |---|---|---|---|
+> | 普通方法 | `self`（实例） | 实例属性 + 类 | `trim` 要读 `self.max_history_messages` |
+> | `@classmethod` | `cls`（类本身） | 类属性，常用于"另一种构造方式" | `Tracing.from_settings` |
+> | `@staticmethod` | 无 | 只有传进来的参数 | `call_key`、`argument_error_message` |
+>
+> 实例和类都能调用：`Harness.argument_error_message("x", "e")` 与 `h.argument_error_message("x", "e")` 结果相同。loop 里仍写 `self.harness.argument_error_message(...)`，调用方不需要关心它是不是静态的。
+>
+> **为什么不写成模块级函数？** 也可以，功能上没区别。放在类里是因为它属于 harness 的策略——以后想换一套错误提示措辞，写个 `Harness` 子类覆盖这个方法就行，loop 不用改。加 `@staticmethod` 而不是留着没用的 `self`，是为了让读者一眼看出"这个方法不依赖任何配置"。
+
 ### 上下文裁剪
 
 ```python

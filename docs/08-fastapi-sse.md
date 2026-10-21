@@ -112,7 +112,7 @@ app = create_app()
 
 **lifespan** 是 FastAPI 管理"应用级资源"的地方：`yield` 之前的代码在服务启动时执行一次，`yield` 之后的代码在服务关闭时执行一次。MCP 子进程、数据库连接池这类**整个应用共用、要正确关闭**的资源都应该放在这里。
 
-它是**一个函数**，`yield` 前后在同一个 task 里执行，正好满足 [07 章](07-mcp-client.md#生命周期必须在同一个-task-里打开和关闭) MCP SDK"同一个 task 里打开和关闭"的要求。老式写法 `@app.on_event("startup")` / `@app.on_event("shutdown")` 是两个独立的函数，就满足不了。
+它是**一个函数**，`yield` 前后在同一个 task 里执行，正好满足 [07 章](07-mcp-client.md#生命周期必须在同一个-task-里打开和关闭) MCP SDK"同一个 task 里打开和关闭"的要求。老式写法 `@app.on_event("startup")` / `@app.on_event("shutdown")` 是两个独立的函数，实测它们其实也跑在同一个 task 里（Starlette 在同一个 lifespan task 中依次调用），不会报错；但它已被标记为过时，且打开的对象只能借全局变量传给 shutdown。真正会跨 task 的是"在请求里懒加载打开"，见 07 章。
 
 **`create_app()` 接受一个组件工厂**，这是可测试性的关键：生产环境用 `default_components`（真 LLM、真 MCP 子进程），测试传入一个装着假 LLM、假工具的工厂。**两者走的是完全相同的路由代码**，测试测到的就是线上跑的。
 

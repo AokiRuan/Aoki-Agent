@@ -130,7 +130,7 @@ print(inspect.signature(MCPServer.tool))
 - **现象**：用 pytest 异步 fixture 管理 MCP 连接（`yield` 前 connect、后 close），测试本身全部通过，但每个测试在 teardown 阶段报 `RuntimeError: Attempted to exit cancel scope in a different task than it was entered in`
 - **根因**：MCP SDK 的 `stdio_client` 基于 anyio，要求连接在同一个 asyncio task 里打开和关闭；pytest-asyncio 在不同的 task 里执行 fixture 的 setup 和 teardown
 - **解法**：`MCPClientPool` 实现 `__aenter__` / `__aexit__`，每个测试里用 `async with`
-- **教训**：FastAPI 的 lifespan（一个函数里 yield 前后）天然满足这个约束；「startup 事件打开、shutdown 事件关闭」则不满足。详见 [07 章](07-mcp-client.md#生命周期必须在同一个-task-里打开和关闭)
+- **教训**：FastAPI 的 lifespan（一个函数里 yield 前后）天然满足这个约束（实测旧式 startup/shutdown 事件也在同一个 task 里）；真正会踩坑的是「在请求处理函数里懒加载打开」——每个请求是独立的 task。详见 [07 章](07-mcp-client.md#生命周期必须在同一个-task-里打开和关闭)
 
 ### 子进程拿不到终端里设置的环境变量
 
